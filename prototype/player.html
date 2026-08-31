@@ -1,0 +1,327 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>pwf player</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  /* Diagnostics sit over the game because the stage covers the whole page
+     while one is running, and the numbers are only useful while playing. */
+  #probe {
+    position: fixed; top: 0; left: 0; z-index: 9;
+    max-width: 46ch; padding: 6px 8px;
+    font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #b9f6c8; background: rgba(0, 0, 0, .62);
+    white-space: pre; pointer-events: none;
+  }
+</style>
+<script>
+  // Which runtime tree to load. Two Pyxel versions can sit side by side here,
+  // which is how one is compared against another without a rebuild.
+  const RUNTIME = new URLSearchParams(location.search).get("rt") || "vendor";
+  const runtimeReady = new Promise((resolve, reject) => {
+    const tag = document.createElement("script");
+    tag.src = `${RUNTIME}/pyxel/pyxel.js`;
+    tag.onload = resolve;
+    tag.onerror = () => reject(new Error(`${RUNTIME}/pyxel/pyxel.js を読めません`));
+    document.head.appendChild(tag);
+  });
+</script>
+<div id="probe">計測待ち</div>
+<script>
+  // A game shipped as "a .pyxapp plus a folder" reads that folder from the
+  // working directory. The folder can run to hundreds of megabytes, so files
+  // are attached as nodes that know their size and fetch their bytes on the
+  // first read -- the same approach the Android player takes, kept in step
+  // with it deliberately.
+  const WORK = "/pyxel_working_directory";
+  let dataBase = null;
+
+  // A buzz in the audio is what a starved audio callback sounds like, and the
+  // callback runs on the main thread alongside the frame. Record the gaps
+  // between frames so a stall can be pointed at rather than guessed at.
+  // What is measured is reported back to the server as a request, so the
+  // numbers land in the server log and nobody has to read an overlay while
+  // playing.
+  const beacon = (path, params) => {
+    new Image().src = `/__probe/${path}?${new URLSearchParams(params)}`;
+  };
+
+  window.pwfStalls = [];
+  (function watchFrames() {
+    let last = performance.now();
+    const tick = (now) => {
+      const gap = now - last;
+      last = now;
+      if (gap > 40) {
+        window.pwfStalls.push({ at: Math.round(now), gap: Math.round(gap) });
+        if (window.pwfStalls.length > 200) window.pwfStalls.shift();
+        beacon("stall", { ms: Math.round(gap), at: Math.round(now) });
+        render();
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  })();
+
+  // Every synchronous read, with what it cost.
+  window.pwfLazy = [];
+
+  const render = () => {
+    const box = document.getElementById("probe");
+    if (!box) return;
+    const stalls = window.pwfStalls;
+    const worst = stalls.reduce((m, s) => Math.max(m, s.gap), 0);
+    const recent = stalls.slice(-6).map((s) => `${s.gap}ms`).join(" ");
+    const reads = window.pwfLazy
+      .slice(-4)
+      .map((r) => `  ${r.ms}ms ${r.kb}KB ${r.rel.split("/").pop()}`)
+      .join("\n");
+    box.textContent =
+      `画面が止まった回数 ${stalls.length}（最大 ${worst}ms）\n` +
+      `直近: ${recent || "なし"}\n` +
+      `ファイル読み込み ${window.pwfLazy.length} 件\n${reads}`;
+  };
+  setInterval(render, 500);
+
+  const ensureDir = (fs, dir) => {
+    const parts = dir.split("/").filter(Boolean);
+    let path = "";
+    for (const part of parts) {
+      path += `/${part}`;
+      try {
+        fs.mkdir(path);
+      } catch (err) {
+        // Already there.
+      }
+    }
+  };
+
+  const attachLazyFile = (fs, rel, url, size) => {
+    const full = `${WORK}/${rel}`;
+    ensureDir(fs, full.slice(0, full.lastIndexOf("/")));
+    try {
+      fs.unlink(full);
+    } catch (err) {
+      // Not there yet.
+    }
+
+    const node = fs.create(full, 0o100666);
+    node.contents = null;
+    node.usedBytes = size;
+
+    const memfs = node.stream_ops;
+    const load = (target) => {
+      if (target.contents) return;
+      // The fetch is synchronous, which is the whole point -- a read has to
+      // return bytes -- but it also means the main thread stops here. Time it,
+      // because that stall is exactly what an audio underrun sounds like.
+      const t0 = performance.now();
+      const request = new XMLHttpRequest();
+      request.open("GET", url, false);
+      request.overrideMimeType("text/plain; charset=x-user-defined");
+      request.send(null);
+      if (request.status !== 200 && request.status !== 0) throw new fs.ErrnoError(44);
+      const raw = request.response;
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i) & 0xff;
+      target.contents = bytes;
+      target.usedBytes = bytes.length;
+      const ms = performance.now() - t0;
+      window.pwfLazy.push({
+        at: Math.round(t0),
+        rel,
+        kb: Math.round(bytes.length / 1024),
+        ms: Math.round(ms),
+      });
+      if (ms > 1) {
+        console.log(`[lazy] ${rel} ${(bytes.length / 1024).toFixed(0)}KB ${ms.toFixed(0)}ms`);
+        beacon("read", {
+          ms: Math.round(ms),
+          kb: Math.round(bytes.length / 1024),
+          f: rel.split("/").pop(),
+        });
+      }
+    };
+
+    node.stream_ops = Object.create(memfs);
+    node.stream_ops.read = (stream, buffer, offset, length, position) => {
+      load(stream.node);
+      return memfs.read(stream, buffer, offset, length, position);
+    };
+    node.stream_ops.write = (stream, buffer, offset, length, position, canOwn) => {
+      load(stream.node);
+      return memfs.write(stream, buffer, offset, length, position, canOwn);
+    };
+  };
+
+
+  // A game that ships its own audio engine looks for this object before it
+  // falls back to Pyxel's PCM. Taking the offer matters: Pyxel generates audio
+  // on the main thread, so decoding a track there costs ~180ms and is heard as
+  // a buzz in whatever is already playing. An <audio> element decodes off the
+  // main thread and streams, so the same change costs nothing audible.
+  const assetKeys = new Map();
+  let pvnmBgm = null;
+  let pvnmVolume = 1;
+  let pvnmSe = [];
+
+  const pvnmUrl = (key) => {
+    const rel = assetKeys.get(String(key || "").replace(/^\.?\//, ""));
+    return rel ? `${dataBase}/${rel}` : null;
+  };
+
+  window.PVNM_AUDIO = {
+    playBgm(key, volume, loop, start) {
+      const url = pvnmUrl(key);
+      if (!url) return false;
+      if (pvnmBgm && pvnmBgm.dataset.key === String(key)) {
+        pvnmBgm.volume = pvnmVolume = Number(volume) || 0;
+        return true;
+      }
+      window.PVNM_AUDIO.stopBgm();
+      const audio = new Audio(url);
+      audio.dataset.key = String(key);
+      audio.loop = !!loop;
+      audio.volume = pvnmVolume = Math.min(1, Math.max(0, Number(volume) || 0));
+      const seek = Number(start) || 0;
+      if (seek > 0) {
+        audio.addEventListener("loadedmetadata", () => {
+          try { audio.currentTime = seek; } catch (err) { /* not seekable */ }
+        }, { once: true });
+      }
+      pvnmBgm = audio;
+      audio.play().catch(() => {});
+      return true;
+    },
+    stopBgm() {
+      if (!pvnmBgm) return;
+      pvnmBgm.pause();
+      pvnmBgm = null;
+    },
+    setBgmVolume(unit) {
+      pvnmVolume = Math.min(1, Math.max(0, Number(unit) || 0));
+      if (pvnmBgm) pvnmBgm.volume = pvnmVolume;
+    },
+    getBgmCurrentTime() {
+      return pvnmBgm ? pvnmBgm.currentTime : 0;
+    },
+    isBgmPlaying() {
+      return !!pvnmBgm && !pvnmBgm.paused && !pvnmBgm.ended;
+    },
+    playSe(key, volume, repeat) {
+      const url = pvnmUrl(key);
+      if (!url) return false;
+      const audio = new Audio(url);
+      audio.loop = Number(repeat) > 0;
+      audio.volume = Math.min(1, Math.max(0, Number(volume) || 0));
+      audio.addEventListener("ended", () => {
+        pvnmSe = pvnmSe.filter((el) => el !== audio);
+      }, { once: true });
+      pvnmSe.push(audio);
+      if (pvnmSe.length > 8) pvnmSe.shift()?.pause();
+      audio.play().catch(() => {});
+      return true;
+    },
+    stopAllSe() {
+      for (const el of pvnmSe) el.pause();
+      pvnmSe = [];
+    },
+  };
+
+  // Called from the seam the runtime patch adds, after the .pyxapp is written
+  // and before the app runs.
+  window.pwfPrepareFiles = async (pyo) => {
+    if (!dataBase) return;
+    const t0 = performance.now();
+    const fs = pyo.FS;
+    const response = await fetch(`${dataBase}/.pwf-index.json`);
+    const files = response.ok ? await response.json() : [];
+    assetKeys.clear();
+    for (const [rel, size] of files) {
+      attachLazyFile(fs, rel, `${dataBase}/${rel}`, size);
+      // Match on "/assets/" the way the game does: looking for "assets/" alone
+      // finds the tail of a folder called "<name>_assets" first.
+      const cut = `/${rel}`.indexOf("/assets/");
+      if (cut >= 0) assetKeys.set(`/${rel}`.slice(cut + 1), rel);
+      assetKeys.set(rel, rel);
+    }
+
+    // Pyxel moves the working directory to the folder the .pyxapp is extracted
+    // into, so what the game reads after init is looked for there. Link the
+    // tree across at extraction time -- a copy would pull every byte in.
+    pyo.runPython(`
+import os
+import shutil
+
+import pyxel.cli
+
+WORK = "/pyxel_working_directory"
+
+if not getattr(pyxel.cli, "_pwf_mirrors_data", False):
+    _pwf_orig_extract = pyxel.cli._extract_pyxel_app
+
+    def _pwf_extract(app_file):
+        script = _pwf_orig_extract(app_file)
+        if script:
+            dest = os.path.dirname(script)
+            for name in os.listdir(WORK):
+                if name.endswith(".pyxapp"):
+                    continue
+                src = os.path.join(WORK, name)
+                dst = os.path.join(dest, name)
+                if os.path.lexists(dst):
+                    continue
+                if os.path.isdir(src):
+                    os.symlink(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+        return script
+
+    pyxel.cli._extract_pyxel_app = _pwf_extract
+    pyxel.cli._pwf_mirrors_data = True
+`);
+    parent.postMessage(
+      { type: "data-ready", files: files.length, ms: Math.round(performance.now() - t0) },
+      "*",
+    );
+  };
+</script>
+<script>
+  // The player frame is a blank host until the shell hands it an app.
+  // Receiving raw bytes (never a URL) keeps CORS and the file: scheme out of
+  // the picture entirely: the pyxapp is written straight into Pyodide's FS.
+  let launched = false;
+
+  window.addEventListener("message", async (e) => {
+    const msg = e.data;
+    if (!msg || msg.type !== "play") return;
+    await runtimeReady;
+    dataBase = msg.data || null;
+
+    if (!launched) {
+      launched = true;
+      await launchPyxel({
+        command: "play",
+        name: msg.name,
+        base64: msg.base64,
+        gamepad: "enabled",
+      });
+    } else {
+      // Warm swap: Pyodide costs ~6 s to boot, so keep the interpreter and
+      // let resetPyxel() re-run _executePyxelCommand against new params.
+      const t0 = performance.now();
+      Object.assign(window.pyxelContext.params, {
+        name: msg.name,
+        base64: msg.base64,
+      });
+      await resetPyxel();
+      parent.postMessage(
+        { type: "swapped", ms: Math.round(performance.now() - t0) },
+        "*",
+      );
+    }
+  });
+  runtimeReady.then(
+    () => parent.postMessage({ type: "player-ready", runtime: RUNTIME }, "*"),
+    (err) => parent.postMessage({ type: "player-failed", reason: String(err) }, "*"),
+  );
+</script>

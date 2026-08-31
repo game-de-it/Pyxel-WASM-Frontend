@@ -1,0 +1,1040 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>pwf player</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+</style>
+<script>
+  // The runtime lives under a bundle-numbered path so an update invalidates
+  // every URL at once; the shell passes the number it resolved at startup.
+  const RUNTIME = new URLSearchParams(location.search).get("rt");
+  // Which Pyxel to load. Empty means the bundle's own; otherwise the version
+  // is part of the path, and pyxel.js reaches its interpreter as "../pyodide"
+  // -- which resolves either to that version's own or to the shared one.
+  const PYXEL_VERSION = new URLSearchParams(location.search).get("px") || "";
+  const PYXEL_DIR = PYXEL_VERSION
+    ? `rt-${encodeURIComponent(PYXEL_VERSION)}/pyxel`
+    : "pyxel";
+  const tell = (msg) => parent.postMessage(msg, location.origin);
+
+  const WORK = "/pyxel_working_directory";
+
+  // pyxel.js runs _executePyxelCommand against the very object handed to
+  // launchPyxel, and only publishes it as pyxelContext.params once the tap gate
+  // clears. Holding the reference lets us redirect a launch that is still
+  // waiting for that tap.
+  let launchParams = null;
+  let appId = null;
+  let appRev = 0;
+  let audioMode = "pyxel";
+  let hasData = false;
+
+  const pyodide = () => window.pyxelContext?.pyodide;
+
+
+  // The activity runs the WebView at 100%, so a CSS pixel is a device pixel and
+  // Pyxel's whole-number scaling is whole-number on the glass. `screen` did not
+  // get the memo: it keeps reporting the display in density-independent pixels,
+  // 745x486 where the page counts 1620x1055. Emscripten sizes the canvas from
+  // those numbers when Pyxel goes fullscreen, which lands the game at 46% in a
+  // corner. Report the units the rest of the page is using.
+  for (const [prop, source] of [
+    ["width", "innerWidth"],
+    ["availWidth", "innerWidth"],
+    ["height", "innerHeight"],
+    ["availHeight", "innerHeight"],
+  ]) {
+    try {
+      Object.defineProperty(window.screen, prop, {
+        configurable: true,
+        get: () => window[source],
+      });
+    } catch (err) {
+      // Locked down; fullscreen will be the wrong size but nothing else breaks.
+    }
+  }
+
+  // ---- display -----------------------------------------------------------
+
+  // Pyxel owns the canvas. Its own integer scaling, screen modes and fullscreen
+  // all resize the canvas for themselves, and anything we impose here turns
+  // into a tug of war -- one this lost twice. The single thing the page still
+  // has to get right is that a CSS pixel equals a device pixel, which the
+  // activity arranges; then Pyxel's whole-number scaling is whole-number on the
+  // glass too.
+  let gamepadHidden = false;
+  const gamepadOnScreen = () =>
+    !gamepadHidden && !!document.getElementById("pyxel-gamepad-cross");
+
+  const showGamepad = (show) => {
+    gamepadHidden = !show;
+    for (const id of ["pyxel-gamepad-cross", "pyxel-gamepad-button", "pyxel-gamepad-menu"]) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = show ? "" : "none";
+    }
+    // pyxel.js reserves the bottom fifth for the touch controls; hand it back
+    // when they are gone. This is the same knob pyxel.js itself uses.
+    const canvas = document.querySelector("canvas#canvas");
+    if (canvas) canvas.style.height = show ? "80%" : "100%";
+    window.dispatchEvent(new Event("resize"));
+  };
+
+  // Per app: "auto" hides the painted pad once a real one is used, which is
+  // the old behaviour; "on" and "off" are the launcher's answer to having to
+  // reach for the physical pad every time just to dismiss the painted one.
+  let padMode = "auto";
+
+  const applyPadMode = () => {
+    if (padMode === "off") showGamepad(false);
+    else if (padMode === "on") showGamepad(true);
+  };
+
+  // pyxel.js appends the touch controls from each image's onload, so they are
+  // not in the document yet when the launch command reaches our hook. Watch for
+  // them instead of guessing at a delay.
+  new MutationObserver(() => {
+    if (padMode !== "auto") applyPadMode();
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  window.addEventListener("gamepadconnected", () => {
+    if (padMode === "auto") showGamepad(false);
+  });
+  window.addEventListener("gamepaddisconnected", () => {
+    if (padMode !== "auto") return;
+    const pads = [...(navigator.getGamepads?.() || [])].filter(Boolean);
+    if (!pads.length) showGamepad(true);
+  });
+
+
+  // ---- host page API expected by web-built games --------------------------
+  // Some games are packaged for a vendor's web wrapper: they hand their BGM,
+  // the painted pad artwork, vibration and store integration to the hosting
+  // page. Several of those hooks are read off `window` with no guard at all,
+  // where a missing one is not a degraded feature but an AttributeError before
+  // the title screen. So answer them, and answer honestly -- this launcher has
+  // no store, its music is whatever the app folder holds, and the canvas
+  // belongs to pyxel.
+  let hostBgm = null;         // element currently carrying the music
+  let hostBgmWanted = false;  // ...and whether it should be, across suspends
+  let hostVolume = 1;
+  let hostHidden = 0;         // times the game has been put away
+  let hostGestures = 0;       // ...and touched, which is how a page earns audio
+  const hostClips = new Map();
+
+  for (const type of ["pointerdown", "keydown"]) {
+    window.addEventListener(type, () => { hostGestures += 1; }, true);
+  }
+
+  const forgetHostAudio = () => {
+    forgetMedia();
+    window.PVNM_AUDIO.stopBgm();
+    pvnmStopSe();
+    assetKeys.clear();
+    window.stopAudio();
+    for (const audio of hostClips.values()) {
+      if (audio) URL.revokeObjectURL(audio.src);
+    }
+    hostClips.clear();
+  };
+
+  const hostClip = (src) => {
+    if (hostClips.has(src)) return hostClips.get(src);
+    let audio = null;
+    try {
+      const fs = pyodide().FS;
+      // Paths arrive relative to the app folder, which is the working
+      // directory pyxel leaves the game in.
+      const path = src.startsWith("/") ? src : fs.cwd() + "/" + src;
+      const types = { mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", m4a: "audio/mp4" };
+      const type = types[src.split(".").pop().toLowerCase()] || "audio/mpeg";
+      const blob = new Blob([fs.readFile(path)], { type });
+      audio = new Audio(URL.createObjectURL(blob));
+      audio.preload = "auto";
+    } catch (err) {
+      console.log("音声を読み込めません: " + src + " (" + err + ")");
+    }
+    hostClips.set(src, audio);
+    return audio;
+  };
+
+  const hostSeek = (audio, sec) => {
+    if (!sec) return;
+    const apply = () => { try { audio.currentTime = sec; } catch (err) { /* not seekable */ } };
+    if (audio.readyState >= 1) apply();
+    else audio.addEventListener("loadedmetadata", apply, { once: true });
+  };
+
+  // A frame of the game as it was last left, small enough to sit in a library
+  // card. Nothing is captured while the tap prompt is up: that screen says
+  // nothing about the game.
+  const SHOT_WIDTH = 384;
+
+  // ---- the tap gate ---------------------------------------------------------
+  // Pyxel will not start until a click or touch lands on the body, which a pad
+  // cannot produce. While its prompt is up, treat any button or key as that
+  // press. The gate exists so audio starts from a gesture; the WebView is
+  // already configured not to require one, so standing in for it costs nothing.
+  const passTapGate = () => {
+    if (!document.getElementById("pyxel-prompt")) return false;
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // SDL2 may have opened its context suspended; nothing else will resume it.
+    setTimeout(() => setAudio(true), 0);
+    return true;
+  };
+
+  (function watchTapGate() {
+    let armed = false;
+    const tick = () => {
+      requestAnimationFrame(tick);
+      if (!document.getElementById("pyxel-prompt")) {
+        armed = false;
+        return;
+      }
+      const pressed = [...(navigator.getGamepads?.() || [])]
+        .some((pad) => pad && pad.buttons.some((button) => button.pressed));
+      if (!pressed) {
+        armed = true;           // wait for a fresh press, not one already held
+        return;
+      }
+      if (!armed) return;
+      armed = false;
+      passTapGate();
+    };
+    requestAnimationFrame(tick);
+  })();
+
+  // Some handhelds send their buttons as key events instead.
+  document.addEventListener("keydown", () => { passTapGate(); }, true);
+
+  // ---- browser audio for pyxel's PCM sounds --------------------------------
+  // `pyxel.sounds[n].pcm(path)` decodes a whole file on the main thread, and
+  // Pyxel's audio is generated on that same thread, so loading a track is heard
+  // as a buzz in whatever is already playing. With the per-app option on, those
+  // sounds are handed to an <audio> element instead: the browser decodes off
+  // the main thread, and the launcher plays no part beyond naming the file.
+  const dataRels = new Set();
+  const mediaByChannel = new Map();
+  const mediaBlobs = new Map();
+
+  const mediaUrl = (rel, abs) => {
+    // A file in the data folder is already served; one inside the .pyxapp has
+    // to come out of the interpreter's filesystem once, and is kept after.
+    if (rel && dataRels.has(rel)) return `/appdata/${appId}/${rel}`;
+    if (mediaBlobs.has(abs)) return mediaBlobs.get(abs);
+    try {
+      const bytes = pyodide().FS.readFile(abs);
+      const type = MEDIA_TYPES[abs.split(".").pop().toLowerCase()] || "audio/mpeg";
+      const url = URL.createObjectURL(new Blob([bytes], { type }));
+      mediaBlobs.set(abs, url);
+      return url;
+    } catch (err) {
+      console.log("音声を読めません: " + abs);
+      return null;
+    }
+  };
+
+  const MEDIA_TYPES = {
+    mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav",
+    m4a: "audio/mp4", flac: "audio/flac",
+  };
+
+  const forgetMedia = () => {
+    for (const el of mediaByChannel.values()) el.pause();
+    mediaByChannel.clear();
+    for (const url of mediaBlobs.values()) URL.revokeObjectURL(url);
+    mediaBlobs.clear();
+    dataRels.clear();
+  };
+
+  window.pwfMedia = {
+    play(channel, rel, abs, gain, loop, sec) {
+      const url = mediaUrl(rel, abs);
+      if (!url) return;
+      window.pwfMedia.stop(channel);
+      const audio = new Audio(url);
+      audio.loop = !!loop;
+      audio.volume = Math.min(1, Math.max(0, Number(gain) || 0));
+      const seek = Number(sec) || 0;
+      if (seek > 0) {
+        audio.addEventListener("loadedmetadata", () => {
+          try { audio.currentTime = seek; } catch (err) { /* not seekable */ }
+        }, { once: true });
+      }
+      audio.addEventListener("error", () => {
+        console.log(`pwf: ch=${channel} error ${audio.error?.code}`);
+      }, { once: true });
+      mediaByChannel.set(channel, audio);
+      audio.play().catch((err) => {
+        if (err?.name !== "AbortError") console.log("音声を再生できません: " + err);
+      });
+    },
+    stop(channel) {
+      if (channel < 0) {
+        for (const el of mediaByChannel.values()) el.pause();
+        mediaByChannel.clear();
+        return;
+      }
+      const audio = mediaByChannel.get(channel);
+      if (!audio) return;
+      audio.pause();
+      mediaByChannel.delete(channel);
+    },
+    // Seconds while playing; nothing once the clip has finished, which is how
+    // a game notices a track ended and moves to the next.
+    //
+    // `undefined`, never `null`: Pyodide turns undefined into None, but null
+    // into a JsNull object that is not None -- which reads as "still playing"
+    // and then fails the moment anyone treats it as a number.
+    pos(channel) {
+      const audio = mediaByChannel.get(channel);
+      if (!audio || audio.ended) return undefined;
+      return audio.currentTime;
+    },
+  };
+
+  // ---- PVNM_AUDIO ---------------------------------------------------------
+  // A game that ships its own audio engine looks for this object before it
+  // falls back to Pyxel's PCM. Taking the offer matters: Pyxel generates audio
+  // on the main thread, so decoding a track there costs ~180ms and is heard as
+  // a buzz in whatever is already playing. An <audio> element decodes off the
+  // main thread and streams, so the same change costs nothing audible.
+  //
+  // Clips are addressed by asset key -- "assets/sounds/bgm/x.mp3" -- which is
+  // resolved against the game's data folder, and that folder is already served
+  // over http, so the element can be pointed straight at it. No bytes pass
+  // through the interpreter at all.
+  const assetKeys = new Map();
+  let pvnmBgm = null;
+  let pvnmBgmVolume = 1;
+  let pvnmSe = [];
+
+  let pvnmMisses = 0;
+  const pvnmUrl = (key) => {
+    const clean = String(key || "").replace(/^\.?\//, "");
+    const rel = assetKeys.get(clean);
+    if (!rel) {
+      // The call sites ignore the return value, so an unresolved key would
+      // otherwise be silent.
+      if (pvnmMisses++ < 5) console.log("音声のキーを解決できません: " + clean);
+      return null;
+    }
+    return `/appdata/${appId}/${rel}`;
+  };
+
+  const pvnmStopSe = () => {
+    for (const el of pvnmSe) el.pause();
+    pvnmSe = [];
+  };
+
+  window.PVNM_AUDIO = {
+    playBgm(key, volume, loop, start) {
+      const url = pvnmUrl(key);
+      if (!url) return false;
+      if (pvnmBgm && pvnmBgm.dataset.key === String(key)) {
+        pvnmBgm.volume = pvnmBgmVolume = Number(volume) || 0;
+        return true;
+      }
+      window.PVNM_AUDIO.stopBgm();
+      const audio = new Audio(url);
+      audio.dataset.key = String(key);
+      audio.loop = !!loop;
+      audio.volume = pvnmBgmVolume = Math.min(1, Math.max(0, Number(volume) || 0));
+      const seek = Number(start) || 0;
+      if (seek > 0) {
+        audio.addEventListener("loadedmetadata", () => {
+          try { audio.currentTime = seek; } catch (err) { /* not seekable */ }
+        }, { once: true });
+      }
+      pvnmBgm = audio;
+      audio.play().catch((err) => {
+        if (err?.name !== "AbortError") console.log("BGMを再生できません: " + err);
+      });
+      return true;
+    },
+    stopBgm() {
+      if (!pvnmBgm) return;
+      pvnmBgm.pause();
+      pvnmBgm = null;
+    },
+    setBgmVolume(unit) {
+      pvnmBgmVolume = Math.min(1, Math.max(0, Number(unit) || 0));
+      if (pvnmBgm) pvnmBgm.volume = pvnmBgmVolume;
+    },
+    getBgmCurrentTime() {
+      return pvnmBgm ? pvnmBgm.currentTime : 0;
+    },
+    isBgmPlaying() {
+      return !!pvnmBgm && !pvnmBgm.paused && !pvnmBgm.ended;
+    },
+    playSe(key, volume, repeat) {
+      const url = pvnmUrl(key);
+      if (!url) return false;
+      const audio = new Audio(url);   // the file is http-cached after the first
+      audio.loop = Number(repeat) > 0;
+      audio.volume = Math.min(1, Math.max(0, Number(volume) || 0));
+      audio.addEventListener("ended", () => {
+        pvnmSe = pvnmSe.filter((el) => el !== audio);
+      }, { once: true });
+      pvnmSe.push(audio);
+      if (pvnmSe.length > 8) pvnmSe.shift()?.pause();
+      audio.play().catch(() => {});
+      return true;
+    },
+    stopAllSe: pvnmStopSe,
+  };
+
+  window.isApp = false; // no store integration here, so no in-app purchases
+  window.preloadAudio = (src) => { hostClip(src); };
+  window.playAudio = (src, loop, startSec) => {
+    window.stopAudio();
+    const audio = hostClip(src);
+    if (!audio) return;
+    audio.loop = !!loop;
+    audio.volume = hostVolume;
+    try { audio.currentTime = 0; } catch (err) { /* not seekable yet */ }
+    hostSeek(audio, Number(startSec) || 0);
+    hostBgm = audio;
+    hostBgmWanted = true;
+    console.log("BGM " + src);
+    audio.play().catch((err) => {
+      // Going back to the library pauses the element mid-start; that abort is
+      // the launcher's own doing and not worth a line in the log.
+      if (err?.name !== "AbortError") console.log("BGMを再生できません: " + err);
+    });
+  };
+  window.stopAudio = () => {
+    hostBgmWanted = false;
+    if (!hostBgm) return;
+    hostBgm.pause();
+    try { hostBgm.currentTime = 0; } catch (err) { /* nothing to rewind */ }
+    hostBgm = null;
+  };
+  window.pauseAudio = () => { hostBgm?.pause(); };
+  window.resumeAudio = () => {
+    if (hostBgmWanted) hostBgm?.play().catch(() => {});
+  };
+  window.setVolume = (vol) => {
+    hostVolume = Math.min(1, Math.max(0, Number(vol) || 0));
+    if (hostBgm) hostBgm.volume = hostVolume;
+  };
+  window.setAudioVolume = window.setVolume;
+  window.isAudioPlaying = () => !!hostBgm && !hostBgm.paused && !hostBgm.ended;
+  window.getAudioPosition = () => (hostBgm ? hostBgm.currentTime : null);
+  window.isAudioReady = (src) => {
+    const audio = hostClip(src);
+    return !!audio && audio.readyState >= 3;
+  };
+
+  window.vibrateDevice = (pattern) => !!navigator.vibrate?.(pattern ?? 30);
+  window.setButtonImage = () => {};  // the painted pad on screen is pyxel's own
+  window.requestReview = () => {};   // there is no store page to send anyone to
+  // Rotation and canvas geometry are not the page's to give away: the activity
+  // owns the first and pyxel the second. Saying so is what these return.
+  window.isOrientationLockSupported = () => false;
+  window.setOrientationLock = () => false;
+  window.clearOrientationLock = () => false;
+  window.setDisplayMode = () => {
+    throw new Error("表示モードは pyxel 側の設定です");
+  };
+  Object.defineProperty(window, "useVirtualGamePad", { get: () => gamepadOnScreen() });
+  Object.defineProperty(window, "hiddenCount", { get: () => hostHidden });
+  Object.defineProperty(window, "userGestureCount", { get: () => hostGestures });
+
+  // ---- data folder and save files ----------------------------------------
+
+  const ensureDir = (fs, dir) => {
+    let path = "";
+    for (const part of dir.split("/").filter(Boolean)) {
+      path += `/${part}`;
+      try {
+        fs.mkdir(path);
+      } catch (err) {
+        // Already there.
+      }
+    }
+  };
+
+  const writeToWorkDir = (fs, rel, bytes) => {
+    const full = `${WORK}/${rel}`;
+    ensureDir(fs, full.slice(0, full.lastIndexOf("/")));
+    fs.writeFile(full, bytes);
+  };
+
+  /**
+   * Attaches a data file as a node that knows its size but not yet its bytes.
+   *
+   * Asset folders run to hundreds of megabytes; copying one into Pyodide's
+   * in-memory filesystem at every launch is not affordable. Real nodes keep
+   * directory listings and `stat` honest, and the contents are fetched the
+   * first time something actually reads the file. Pyodide's own
+   * `FS.createLazyFile` aborts, hence doing it by hand.
+   */
+
+  const attachLazyFile = (fs, rel, url, size) => {
+    const full = `${WORK}/${rel}`;
+    ensureDir(fs, full.slice(0, full.lastIndexOf("/")));
+    try {
+      fs.unlink(full);
+    } catch (err) {
+      // Not there yet.
+    }
+
+    const node = fs.create(full, 0o100666);
+    node.contents = null;
+    node.usedBytes = size;
+
+    const memfs = node.stream_ops;
+    const load = (target) => {
+      if (target.contents) return;
+      const request = new XMLHttpRequest();
+      request.open("GET", url, false);
+      request.overrideMimeType("text/plain; charset=x-user-defined");
+      request.send(null);
+      if (request.status !== 200 && request.status !== 0) {
+        throw new fs.ErrnoError(44);
+      }
+      const raw = request.response;
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i) & 0xff;
+      target.contents = bytes;
+      target.usedBytes = bytes.length;
+    };
+
+    node.stream_ops = Object.create(memfs);
+    node.stream_ops.read = (stream, buffer, offset, length, position) => {
+      load(stream.node);
+      return memfs.read(stream, buffer, offset, length, position);
+    };
+    node.stream_ops.write = (stream, buffer, offset, length, position, canOwn) => {
+      load(stream.node);
+      return memfs.write(stream, buffer, offset, length, position, canOwn);
+    };
+  };
+
+
+  const fetchInto = async (fs, base, paths) => {
+    for (const rel of paths) {
+      const response = await fetch(`${base}/${rel}`);
+      if (!response.ok) continue;
+      writeToWorkDir(fs, rel, new Uint8Array(await response.arrayBuffer()));
+    }
+  };
+
+  const listing = async (url) => {
+    const response = await fetch(url);
+    return response.ok ? response.json() : [];
+  };
+
+  // Called from the seam the runtime patch adds, after the .pyxapp is written
+  // and before the app runs.
+  window.pwfPrepareFiles = async (pyo) => {
+    applyPadMode();
+    if (!appId) return;
+    const t0 = performance.now();
+    const fs = pyo.FS;
+
+    // Data comes in as [path, size] pairs and is attached, not copied.
+    const dataFiles = hasData ? await listing(`/appdata/${appId}/.pwf-index.json`) : [];
+    for (const [rel, size] of dataFiles) {
+      attachLazyFile(fs, rel, `/appdata/${appId}/${rel}`, size);
+      // The game asks by asset key, which starts at the "assets/" segment
+      // rather than at the folder the launcher put the tree in. Match on
+      // "/assets/" the way the game itself does -- looking for "assets/" alone
+      // finds the tail of a folder called "<name>_assets" first.
+      dataRels.add(rel);
+      const cut = `/${rel}`.indexOf("/assets/");
+      if (cut >= 0) assetKeys.set(`/${rel}`.slice(cut + 1), rel);
+      assetKeys.set(rel, rel);
+    }
+
+    // Save files are small and get written back, so they come across whole.
+    const savePaths = await listing(`/appsave/${appId}/.pwf-index.json`);
+    await fetchInto(fs, `/appsave/${appId}`, savePaths.map((p) => (Array.isArray(p) ? p[0] : p)));
+
+    // Pyxel moves the working directory to the folder the .pyxapp was extracted
+    // into, so files the game reads after init are looked for there instead.
+    // Mirror across at extraction time, the only moment that folder is known,
+    // and record what was there so anything appearing later reads as save data.
+    pyo.runPython(`
+import os
+import shutil
+
+import pyxel.cli
+
+WORK = "/pyxel_working_directory"
+
+
+def _pwf_snapshot_tree(root):
+    seen = {}
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            rel = os.path.relpath(path, root).replace(os.sep, "/")
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            seen[rel] = (st.st_size, int(st.st_mtime))
+    return seen
+
+
+def _pwf_changed_since(root, baseline):
+    out = {}
+    for rel, stamp in _pwf_snapshot_tree(root).items():
+        if baseline.get(rel) == stamp:
+            continue
+        out[rel] = os.path.join(root, rel)
+    return out
+
+
+def _pwf_collect_saves():
+    """The app's save set: what it wrote this run, plus what it kept from before.
+
+    A snapshot replaces the stored set wholesale, so a file the game did not
+    touch this time still has to be listed or it would be dropped.
+    """
+    roots = [WORK]
+    app_dir = getattr(pyxel.cli, "_pwf_app_dir", None)
+    if app_dir and os.path.isdir(app_dir):
+        roots.append(app_dir)
+
+    found = {}
+    found.update(_pwf_changed_since(WORK, getattr(pyxel.cli, "_pwf_base_work", {})))
+    if len(roots) > 1:
+        found.update(_pwf_changed_since(app_dir, getattr(pyxel.cli, "_pwf_base_app", {})))
+
+    for rel in getattr(pyxel.cli, "_pwf_restored", ()):
+        if rel in found:
+            continue
+        for root in reversed(roots):          # the live copy wins
+            path = os.path.join(root, rel)
+            if os.path.isfile(path):
+                found[rel] = path
+                break
+    return sorted(found.items())
+
+
+if not getattr(pyxel.cli, "_pwf_mirrors_data", False):
+    _pwf_orig_extract = pyxel.cli._extract_pyxel_app
+
+    def _pwf_extract(app_file):
+        script = _pwf_orig_extract(app_file)
+        if script:
+            dest = os.path.dirname(script)
+            for name in os.listdir(WORK):
+                if name.endswith(".pyxapp"):
+                    continue
+                src = os.path.join(WORK, name)
+                dst = os.path.join(dest, name)
+                if os.path.lexists(dst):
+                    continue
+                if os.path.isdir(src):
+                    # A link, not a copy: the tree behind it is attached
+                    # lazily and copying would pull every byte in.
+                    os.symlink(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+            pyxel.cli._pwf_app_dir = dest
+            pyxel.cli._pwf_base_app = _pwf_snapshot_tree(dest)
+            pyxel.cli._pwf_base_work = _pwf_snapshot_tree(WORK)
+        return script
+
+    pyxel.cli._extract_pyxel_app = _pwf_extract
+    pyxel.cli._pwf_mirrors_data = True
+
+pyxel.cli._pwf_restored = ${JSON.stringify(savePaths)}
+`);
+
+
+    // With the option on, Pyxel's PCM sounds are played by the page instead.
+    // Installed once and then gated, so a game launched without the option is
+    // left with the interpreter exactly as it found it.
+    if (audioMode === "browser") {
+      pyo.runPython(`
+import os
+
+import pyxel
+from js import window as _pwf_window
+
+_PWF_WORK = "/pyxel_working_directory"
+
+
+def _pwf_rel(path):
+    """The path as the launcher serves it, or None if it is not served."""
+    try:
+        real = os.path.realpath(str(path))
+    except Exception:
+        return None
+    root = _PWF_WORK.rstrip("/") + "/"
+    return real[len(root):] if real.startswith(root) else None
+
+
+if not getattr(pyxel, "_pwf_media_installed", False):
+    _pwf_pcm = {}
+    _pwf_live = {}
+
+    class _PwfSound:
+        """One sound slot, with pcm() answered by the page rather than decoded."""
+
+        def __init__(self, slot, real):
+            self.__dict__["_pwf_slot"] = slot
+            self.__dict__["_pwf_real"] = real
+
+        def pcm(self, path, *args, **kwargs):
+            if not getattr(pyxel, "_pwf_media_on", False):
+                return self.__dict__["_pwf_real"].pcm(path, *args, **kwargs)
+            _pwf_pcm[self.__dict__["_pwf_slot"]] = str(path)
+            return None
+
+        def __getattr__(self, name):
+            return getattr(self.__dict__["_pwf_real"], name)
+
+        def __setattr__(self, name, value):
+            setattr(self.__dict__["_pwf_real"], name, value)
+
+    class _PwfSounds:
+        def __init__(self, real):
+            self._real = real
+
+        def __getitem__(self, index):
+            return _PwfSound(index, self._real[index])
+
+        def __setitem__(self, index, value):
+            self._real[index] = value
+
+        def __len__(self):
+            return len(self._real)
+
+    _pwf_orig_play = pyxel.play
+    _pwf_orig_stop = pyxel.stop
+    _pwf_orig_play_pos = pyxel.play_pos
+
+    def _pwf_play(ch, snd, sec=None, loop=None, resume=None, tick=None):
+        path = _pwf_pcm.get(snd) if isinstance(snd, int) else None
+        if path is None or not getattr(pyxel, "_pwf_media_on", False):
+            return _pwf_orig_play(ch, snd, sec, loop, resume, tick)
+        gain = 1.0
+        try:
+            gain = float(pyxel.channels[ch].gain)
+        except Exception:
+            pass
+        _pwf_live[ch] = snd
+        # One line per sound, which is rare enough to keep and is the only way
+        # to see this path working from outside.
+        print("pwf: 音声 ch=%s %s" % (ch, path.rsplit("/", 1)[-1]))
+        _pwf_window.pwfMedia.play(
+            ch, _pwf_rel(path), str(path), gain, bool(loop), float(sec or 0.0)
+        )
+        return None
+
+    def _pwf_stop(ch=None):
+        if ch is None:
+            _pwf_live.clear()
+            _pwf_window.pwfMedia.stop(-1)
+            return _pwf_orig_stop()
+        if ch in _pwf_live:
+            del _pwf_live[ch]
+            _pwf_window.pwfMedia.stop(ch)
+            return None
+        return _pwf_orig_stop(ch)
+
+    def _pwf_play_pos(ch):
+        if ch not in _pwf_live:
+            return _pwf_orig_play_pos(ch)
+        try:
+            pos = _pwf_window.pwfMedia.pos(ch)
+        except Exception as e:
+            print("pwf: play_pos に失敗 ch=%s %s: %s" % (ch, type(e).__name__, e))
+            return _pwf_orig_play_pos(ch)
+        # Anything that is not a number means the clip is no longer playing,
+        # and the caller reads that as the track having finished.
+        if not isinstance(pos, (int, float)) or isinstance(pos, bool):
+            _pwf_live.pop(ch, None)
+            return None
+        return (_pwf_live[ch], float(pos))
+
+    pyxel.sounds = _PwfSounds(pyxel.sounds)
+    pyxel.play = _pwf_play
+    pyxel.stop = _pwf_stop
+    pyxel.play_pos = _pwf_play_pos
+    pyxel._pwf_media_installed = True
+
+pyxel._pwf_media_on = True
+`);
+    } else if (pyodide()?.globals?.get?.("pyxel")) {
+      // Installed by an earlier game; leave it in place but inert.
+      try {
+        pyo.runPython("import pyxel\npyxel._pwf_media_on = False");
+      } catch (err) {
+        // pyxel is not imported yet, so nothing is installed either.
+      }
+    }
+
+    tell({
+      type: "data-ready",
+      files: dataFiles.length + savePaths.length,
+      ms: Math.round(performance.now() - t0),
+    });
+  };
+
+  const MAX_SAVE_BYTES = 512 * 1024;
+
+  const toBase64 = (bytes) => {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+  };
+
+  /** Hands the shell whatever the game has written, to keep across launches. */
+  const snapshotSaves = () => {
+    const pyo = pyodide();
+    if (!pyo || !appId || !window.pyxelContext?.initialized) return;
+    let entries;
+    try {
+      entries = pyo.runPython("_pwf_collect_saves()").toJs();
+    } catch (err) {
+      return;
+    }
+    const files = [];
+    let skipped = 0;
+    for (const [rel, path] of entries) {
+      try {
+        const bytes = pyo.FS.readFile(path);
+        if (bytes.length > MAX_SAVE_BYTES) {
+          skipped++;
+          continue;
+        }
+        files.push({ path: rel, base64: toBase64(bytes) });
+      } catch (err) {
+        // Vanished between listing and reading; nothing to keep.
+      }
+    }
+    if (files.length || skipped) tell({ type: "save-data", appId, files, skipped });
+  };
+
+  window.pwfSnapshot = snapshotSaves;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) snapshotSaves();
+  });
+
+  // ---- audio -------------------------------------------------------------
+
+  // Emscripten's SDL2 drives audio from a ScriptProcessorNode on the main
+  // thread. If that thread stops being serviced while the context keeps
+  // running -- the activity pausing, the player being hidden -- the last
+  // buffer repeats and the device sits on one held tone. Suspending the
+  // context is what actually stops the sound.
+  const audioContext = () => pyodide()?._module?.SDL2?.audioContext;
+
+  // Whether a game is on screen at all. Coming back from another app must not
+  // start the sound again while the library is showing -- the interpreter is
+  // kept warm behind it, and it would happily play on.
+  let onScreen = false;
+
+  let audioOn = true;
+  const setAudio = (on) => {
+    if (on) window.resumeAudio();
+    else window.pauseAudio();
+    if (on) {
+      pvnmBgm?.play().catch(() => {});
+      for (const el of mediaByChannel.values()) el.play().catch(() => {});
+    } else {
+      pvnmBgm?.pause();
+      for (const el of pvnmSe) el.pause();
+      for (const el of mediaByChannel.values()) el.pause();
+    }
+    // Going quiet is the edge these games count, to know their music may have
+    // been cut out from under them.
+    if (audioOn && !on) hostHidden += 1;
+    audioOn = on;
+    const ctx = audioContext();
+    if (!ctx) return;
+    const settled =
+      on && ctx.state === "suspended" ? ctx.resume()
+      : !on && ctx.state === "running" ? ctx.suspend()
+      : Promise.resolve();
+    settled.then(() => tell({ type: "audio-state", state: ctx.state }));
+  };
+
+  // Silence is not the same as stopped: a game left running behind the library
+  // keeps burning frames. Emscripten's own pause is the honest way to hold it.
+  const setRunning = (on) => {
+    const module = pyodide()?._module;
+    try {
+      if (on) module?.resumeMainLoop?.();
+      else module?.pauseMainLoop?.();
+    } catch (err) {
+      // Not fatal; the game just keeps ticking.
+    }
+  };
+
+  const setPlaying = (on) => {
+    onScreen = on;
+    setAudio(on);
+    setRunning(on);
+  };
+
+  document.addEventListener("visibilitychange", () => {
+    const visible = !document.hidden && onScreen;
+    setAudio(visible);
+    setRunning(visible);
+  });
+
+  // ---- lifecycle ---------------------------------------------------------
+
+  // There is no "interpreter is up" callback, but pyxel puts the tap prompt on
+  // screen the instant Pyodide and the wheel have finished loading. Watching
+  // for that keeps us off another patch to upstream.
+  const watchForWarm = () => {
+    const t0 = performance.now();
+    const timer = setInterval(() => {
+      if (document.querySelector("img#pyxel-prompt")) {
+        clearInterval(timer);
+        tell({ type: "player-warm", ms: Math.round(performance.now() - t0) });
+      } else if (performance.now() - t0 > 180000) {
+        clearInterval(timer);
+        tell({ type: "player-failed", reason: "ランタイムの起動がタイムアウトしました" });
+      }
+    }, 100);
+  };
+
+  // Once a Python traceback or a fatal error has surfaced, pyxel has already
+  // cancelled the main loop and the interpreter is not in a state that
+  // resetPyxel() can recover from -- attempting it aborts the wasm module.
+  const isTainted = () =>
+    !!document.getElementById("pyxel-error-overlay") ||
+    window.pyxelContext?.hasFatalError === true;
+
+  // A game that exits itself -- an in-game QUIT, or pyxel's quit key -- leaves
+  // the canvas frozen with nothing to say so. Emscripten drops its main-loop
+  // callback at that moment, which is the one honest signal available.
+  let quitWatch = null;
+  let sawRunning = false;
+  let swapping = false;
+
+  const watchForQuit = () => {
+    clearInterval(quitWatch);
+    sawRunning = false;
+    quitWatch = setInterval(() => {
+      if (swapping) return;
+      if (isTainted()) {
+        clearInterval(quitWatch);
+        quitWatch = null;
+        return;
+      }
+      const loop = pyodide()?._module?.MainLoop;
+      if (!loop) return;
+      if (loop.func) {
+        sawRunning = true;
+      } else if (sawRunning) {
+        clearInterval(quitWatch);
+        quitWatch = null;
+        snapshotSaves();
+        tell({ type: "player-quit" });
+      }
+    }, 300);
+  };
+
+  const applyApp = (msg) => {
+    forgetHostAudio();
+    appId = msg.appId || null;
+    appRev = msg.rev || 0;
+    audioMode = msg.audio || "pyxel";
+    hasData = !!msg.hasData;
+    padMode = msg.pad || "auto";
+    launchParams.command = "play";
+    launchParams.name = msg.name;
+    launchParams.base64 = msg.base64;
+    delete launchParams.script;
+  };
+
+  window.addEventListener("message", async (e) => {
+    if (e.origin !== location.origin) return;
+    const msg = e.data || {};
+
+    if (msg.type === "audio") {
+      setPlaying(msg.on);
+      return;
+    }
+
+    if (msg.type === "snapshot") {
+      snapshotSaves();
+      return;
+    }
+
+    if (msg.type === "warm") {
+      if (launchParams) return;
+      // A `run` command needs no file, so warming costs nothing but the idle art.
+      launchParams = { command: "run", gamepad: "enabled", script: msg.script };
+      watchForWarm();
+      launchPyxel(launchParams).catch((err) =>
+        tell({ type: "player-failed", reason: String(err) }),
+      );
+      return;
+    }
+
+    if (msg.type === "play") {
+      if (!launchParams) return;
+
+      if (!window.pyxelContext.initialized) {
+        // Still behind the tap gate: redirect the pending command so the user's
+        // first touch launches the game itself rather than the idle screen.
+        applyApp(msg);
+        watchForQuit();
+        tell({ type: "player-queued", name: msg.name });
+        return;
+      }
+
+      // The same game, still paused rather than gone: picking it back up is a
+      // matter of letting it run again.
+      // A new build of the same game is not the code sitting in the
+      // interpreter, so it has to come up again rather than be resumed.
+      const stillLoaded =
+        appId && appId === msg.appId && appRev === (msg.rev || 0) &&
+        !!pyodide()?._module?.MainLoop?.func;
+      if (msg.prefer === "continue" && stillLoaded && !isTainted()) {
+        setPlaying(true);
+        tell({ type: "player-resumed", name: msg.name });
+        return;
+      }
+
+      if (isTainted()) {
+        tell({ type: "player-tainted" });
+        return;
+      }
+
+      // Interpreter already running: keep this game's progress, then swap.
+      setRunning(true);
+      snapshotSaves();
+      const t0 = performance.now();
+      swapping = true;
+      applyApp(msg);
+      try {
+        await resetPyxel();
+      } finally {
+        swapping = false;
+      }
+      watchForQuit();
+      tell({ type: "player-swapped", name: msg.name, ms: Math.round(performance.now() - t0) });
+      return;
+    }
+  });
+
+  const script = document.createElement("script");
+  script.src = `/runtime/${encodeURIComponent(RUNTIME)}/${PYXEL_DIR}/pyxel.js`;
+  script.onload = () => {
+    // Appended after pyxel.css so these win: the margin around the game is the
+    // page behind the canvas, and it should be black.
+    // Pyxel fills the canvas edge to edge, so this only shows through before
+    // the first frame — but black beats grey either way.
+    const style = document.createElement("style");
+    style.textContent = "div#pyxel-screen { background-color: #000; }";
+    document.head.appendChild(style);
+    tell({ type: "player-ready" });
+  };
+  script.onerror = () => tell({ type: "player-failed", reason: "pyxel.js を読み込めません" });
+  document.head.appendChild(script);
+</script>

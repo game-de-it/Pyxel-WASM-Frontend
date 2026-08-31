@@ -1,0 +1,160 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>pwf - Pyxel App Launcher (PoC)</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #14121c; color: #e8e6f0; }
+  header { padding: 12px 16px; border-bottom: 1px solid #2c2838; }
+  h1 { margin: 0; font-size: 15px; letter-spacing: .04em; }
+  main { padding: 16px; display: grid; gap: 20px; max-width: 640px; }
+  section { display: grid; gap: 8px; }
+  h2 { margin: 0; font-size: 12px; text-transform: uppercase; color: #8f88a8; letter-spacing: .08em; }
+  button, input { font: inherit; }
+  input[type=url] { flex: 1; padding: 7px 9px; border-radius: 6px; border: 1px solid #3a3550; background: #1d1a29; color: inherit; }
+  button { padding: 7px 14px; border-radius: 6px; border: 1px solid #3a3550; background: #262137; color: inherit; cursor: pointer; }
+  button:hover { background: #322a4a; }
+  .row { display: flex; gap: 8px; }
+  #log { font-family: ui-monospace, monospace; font-size: 12px; color: #8f88a8; white-space: pre-wrap; }
+  #stage { position: fixed; inset: 0; background: #000; display: none; }
+  #stage.on { display: block; }
+  #stage iframe { width: 100%; height: 100%; border: 0; display: block; }
+  #close { position: fixed; top: 8px; right: 8px; z-index: 10; opacity: .35; }
+  #close:hover { opacity: 1; }
+</style>
+
+<header><h1>pwf — Pyxel App Launcher (PoC)</h1></header>
+<main>
+  <section>
+    <h2>Runtime</h2>
+    <div class="row" id="runtimes"></div>
+  </section>
+  <section>
+    <h2>Bundled</h2>
+    <div class="row" id="samples"></div>
+  </section>
+  <section>
+    <h2>Local file</h2>
+    <input type="file" id="file" accept=".pyxapp,.zip" />
+  </section>
+  <section>
+    <h2>Remote URL</h2>
+    <div class="row">
+      <input type="url" id="url" placeholder="https://.../game.pyxapp" />
+      <button id="fetch">Fetch &amp; play</button>
+    </div>
+  </section>
+  <section><h2>Log</h2><div id="log">ready</div></section>
+</main>
+
+<div id="stage">
+  <button id="close">close</button>
+</div>
+
+<script>
+  const log = (m) => { document.getElementById("log").textContent = m; console.log(m); };
+
+  // btoa() on a huge string blows the argument limit; chunk it.
+  const toBase64 = (bytes) => {
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(s);
+  };
+
+  const stage = document.getElementById("stage");
+  let frame = null;
+
+  function play(name, bytes) {
+    log(`launching ${name} (${bytes.length} bytes)`);
+    const base64 = toBase64(bytes);
+    stage.classList.add("on");
+
+    // Reuse the frame if it exists: a booted Pyodide is worth ~6 s, so
+    // swapping the app inside the live interpreter beats a fresh iframe.
+    if (frame) {
+      frame.contentWindow.postMessage(
+        { type: "play", name, base64, data: DATA[name] || null }, "*");
+      return;
+    }
+
+    frame = document.createElement("iframe");
+    frame.allow = "autoplay; gamepad; fullscreen";
+    stage.appendChild(frame);
+    window.addEventListener("message", function onReady(e) {
+      if (e.source !== frame.contentWindow || e.data?.type !== "player-ready") return;
+      window.removeEventListener("message", onReady);
+      log(`player ready on ${e.data.runtime}`);
+      frame.contentWindow.postMessage(
+        { type: "play", name, base64, data: DATA[name] || null }, "*");
+    });
+    frame.src = `player.html?rt=${encodeURIComponent(runtime)}`;
+  }
+
+  window.addEventListener("message", (e) => {
+    if (e.data?.type === "swapped") log(`swapped in ${e.data.ms} ms (warm Pyodide)`);
+    if (e.data?.type === "data-ready") log(`data ${e.data.files} files in ${e.data.ms} ms`);
+    if (e.data?.type === "player-failed") log(`player failed: ${e.data.reason}`);
+  });
+
+  document.getElementById("close").onclick = () => {
+    stage.classList.remove("on");
+    log("stage hidden (player kept warm)");
+  };
+
+  // Each tree is one Pyxel version. Switching throws the frame away, because a
+  // page holds one interpreter and it is already bound to the other version.
+  let runtime = new URLSearchParams(location.search).get("rt") || "vendor";
+  const RUNTIMES = [["vendor", "2.9.9 (既定)"], ["vendor-2.9.5", "2.9.5"]];
+  function renderRuntimes() {
+    const row = document.getElementById("runtimes");
+    row.innerHTML = "";
+    for (const [dir, label] of RUNTIMES) {
+      const b = document.createElement("button");
+      b.textContent = label + (dir === runtime ? " ←" : "");
+      b.onclick = () => {
+        if (dir === runtime) return;
+        runtime = dir;
+        frame?.remove();
+        frame = null;
+        renderRuntimes();
+        log(`runtime -> ${dir}`);
+      };
+      row.appendChild(b);
+    }
+  }
+  renderRuntimes();
+
+  // Games that ship a folder beside the .pyxapp name where it is served from.
+  const DATA = { "LastEmulator.pyxapp": "appdata/LastEmulator" };
+
+  for (const name of ["LastEmulator.pyxapp", "megaball.pyxapp", "30sec_of_daylight.pyxapp"]) {
+    const b = document.createElement("button");
+    b.textContent = name.replace(".pyxapp", "");
+    b.onclick = async () => {
+      const r = await fetch(`apps/${name}`);
+      play(name, new Uint8Array(await r.arrayBuffer()));
+    };
+    document.getElementById("samples").appendChild(b);
+  }
+
+  document.getElementById("file").onchange = async (e) => {
+    const f = e.target.files[0];
+    if (f) play(f.name, new Uint8Array(await f.arrayBuffer()));
+  };
+
+  document.getElementById("fetch").onclick = async () => {
+    const url = document.getElementById("url").value.trim();
+    if (!url) return;
+    try {
+      log(`fetching ${url}`);
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const name = (url.split("/").pop() || "remote.pyxapp").split("?")[0];
+      play(name, new Uint8Array(await r.arrayBuffer()));
+    } catch (err) {
+      log(`fetch failed: ${err}`);
+    }
+  };
+</script>

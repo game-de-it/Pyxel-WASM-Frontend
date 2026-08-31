@@ -1,0 +1,11 @@
+prototype/vendor*/
+dist/
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/runtime/
+
+# Games are not ours to redistribute; the samples are fetched by the tools.
+prototype/apps/
+prototype/appdata/

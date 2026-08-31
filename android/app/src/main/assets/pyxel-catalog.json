@@ -1,0 +1,678 @@
+{
+ "generated": "2026-08-31",
+ "source": "https://raw.githubusercontent.com/kitao/pyxel/<tag>/wasm",
+ "versions": [
+  {
+   "pyxel": "2.9.9",
+   "wheel": "pyxel-2.9.9-cp311-abi3-emscripten_5_0_3_wasm32.whl",
+   "abi": "cp311-abi3-emscripten_5_0_3",
+   "pyodide": "314.0.4"
+  },
+  {
+   "pyxel": "2.9.8",
+   "wheel": "pyxel-2.9.8-cp311-abi3-emscripten_5_0_3_wasm32.whl",
+   "abi": "cp311-abi3-emscripten_5_0_3",
+   "pyodide": "314.0.2"
+  },
+  {
+   "pyxel": "2.9.7",
+   "wheel": "pyxel-2.9.7-cp311-abi3-emscripten_5_0_3_wasm32.whl",
+   "abi": "cp311-abi3-emscripten_5_0_3",
+   "pyodide": "314.0.2"
+  },
+  {
+   "pyxel": "2.9.6",
+   "wheel": "pyxel-2.9.6-cp311-abi3-emscripten_5_0_3_wasm32.whl",
+   "abi": "cp311-abi3-emscripten_5_0_3",
+   "pyodide": "314.0.0"
+  },
+  {
+   "pyxel": "2.9.5",
+   "wheel": "pyxel-2.9.5-cp310-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp310-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.9.4",
+   "wheel": "pyxel-2.9.4-cp310-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp310-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.9.3",
+   "wheel": "pyxel-2.9.3-cp310-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp310-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.9.2",
+   "wheel": "pyxel-2.9.2-cp310-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp310-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.9.0",
+   "wheel": "pyxel-2.9.0-cp310-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp310-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.10",
+   "wheel": "pyxel-2.8.10-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.9",
+   "wheel": "pyxel-2.8.9-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.8",
+   "wheel": "pyxel-2.8.8-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.7",
+   "wheel": "pyxel-2.8.7-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.6",
+   "wheel": "pyxel-2.8.6-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.5",
+   "wheel": "pyxel-2.8.5-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.4",
+   "wheel": "pyxel-2.8.4-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.3",
+   "wheel": "pyxel-2.8.3-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.2",
+   "wheel": "pyxel-2.8.2-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.1",
+   "wheel": "pyxel-2.8.1-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.8.0",
+   "wheel": "pyxel-2.8.0-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.12",
+   "wheel": "pyxel-2.7.12-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.11",
+   "wheel": "pyxel-2.7.11-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.10",
+   "wheel": "pyxel-2.7.10-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.9",
+   "wheel": "pyxel-2.7.9-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.8",
+   "wheel": "pyxel-2.7.8-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.7",
+   "wheel": "pyxel-2.7.7-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.6",
+   "wheel": "pyxel-2.7.6-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.5",
+   "wheel": "pyxel-2.7.5-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.4",
+   "wheel": "pyxel-2.7.4-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.3",
+   "wheel": "pyxel-2.7.3-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.2",
+   "wheel": "pyxel-2.7.2-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.1",
+   "wheel": "pyxel-2.7.1-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.7.0",
+   "wheel": "pyxel-2.7.0-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.6.9",
+   "wheel": "pyxel-2.6.9-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.6.8",
+   "wheel": "pyxel-2.6.8-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.6.7",
+   "wheel": "pyxel-2.6.7-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.6.6",
+   "wheel": "pyxel-2.6.6-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.6.5",
+   "wheel": "pyxel-2.6.5-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.6.4",
+   "wheel": "pyxel-2.6.4-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.6.2",
+   "wheel": "pyxel-2.6.2-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.3"
+  },
+  {
+   "pyxel": "2.6.1",
+   "wheel": "pyxel-2.6.1-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.2"
+  },
+  {
+   "pyxel": "2.6.0",
+   "wheel": "pyxel-2.6.0-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.1"
+  },
+  {
+   "pyxel": "2.5.13",
+   "wheel": "pyxel-2.5.13-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.1"
+  },
+  {
+   "pyxel": "2.5.12",
+   "wheel": "pyxel-2.5.12-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.1"
+  },
+  {
+   "pyxel": "2.5.11",
+   "wheel": "pyxel-2.5.11-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.0"
+  },
+  {
+   "pyxel": "2.5.10",
+   "wheel": "pyxel-2.5.10-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.29.0"
+  },
+  {
+   "pyxel": "2.5.9",
+   "wheel": "pyxel-2.5.9-cp38-abi3-emscripten_4_0_9_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_4_0_9",
+   "pyodide": "0.28.3"
+  },
+  {
+   "pyxel": "2.5.8",
+   "wheel": "pyxel-2.5.8-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.5.7",
+   "wheel": "pyxel-2.5.7-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.5.6",
+   "wheel": "pyxel-2.5.6-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.5.5",
+   "wheel": "pyxel-2.5.5-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.5.4",
+   "wheel": "pyxel-2.5.4-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.5.3",
+   "wheel": "pyxel-2.5.3-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.5.2",
+   "wheel": "pyxel-2.5.2-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.5.1",
+   "wheel": "pyxel-2.5.1-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.5.0",
+   "wheel": "pyxel-2.5.0-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.4.10",
+   "wheel": "pyxel-2.4.10-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.4.9",
+   "wheel": "pyxel-2.4.9-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.4.8",
+   "wheel": "pyxel-2.4.8-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.4.7",
+   "wheel": "pyxel-2.4.7-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.4.6",
+   "wheel": "pyxel-2.4.6-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.4.5",
+   "wheel": "pyxel-2.4.5-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.4.4",
+   "wheel": "pyxel-2.4.4-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.7"
+  },
+  {
+   "pyxel": "2.4.3",
+   "wheel": "pyxel-2.4.3-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.5"
+  },
+  {
+   "pyxel": "2.4.2",
+   "wheel": "pyxel-2.4.2-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.5"
+  },
+  {
+   "pyxel": "2.4.1",
+   "wheel": "pyxel-2.4.1-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.5"
+  },
+  {
+   "pyxel": "2.4.0",
+   "wheel": "pyxel-2.4.0-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.5"
+  },
+  {
+   "pyxel": "2.3.18",
+   "wheel": "pyxel-2.3.18-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.17",
+   "wheel": "pyxel-2.3.17-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.16",
+   "wheel": "pyxel-2.3.16-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.15",
+   "wheel": "pyxel-2.3.15-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.14",
+   "wheel": "pyxel-2.3.14-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.13",
+   "wheel": "pyxel-2.3.13-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.12",
+   "wheel": "pyxel-2.3.12-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.11",
+   "wheel": "pyxel-2.3.11-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.10",
+   "wheel": "pyxel-2.3.10-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.9",
+   "wheel": "pyxel-2.3.9-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.3"
+  },
+  {
+   "pyxel": "2.3.8",
+   "wheel": "pyxel-2.3.8-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.0"
+  },
+  {
+   "pyxel": "2.3.7",
+   "wheel": "pyxel-2.3.7-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.0"
+  },
+  {
+   "pyxel": "2.3.6",
+   "wheel": "pyxel-2.3.6-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.0"
+  },
+  {
+   "pyxel": "2.3.5",
+   "wheel": "pyxel-2.3.5-cp38-abi3-emscripten_3_1_58_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_58",
+   "pyodide": "0.27.0"
+  },
+  {
+   "pyxel": "2.3.4",
+   "wheel": "pyxel-2.3.4-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.27.0"
+  },
+  {
+   "pyxel": "2.3.3",
+   "wheel": "pyxel-2.3.3-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.27.1"
+  },
+  {
+   "pyxel": "2.3.2",
+   "wheel": "pyxel-2.3.2-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.27.1"
+  },
+  {
+   "pyxel": "2.3.1",
+   "wheel": "pyxel-2.3.1-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.27.1"
+  },
+  {
+   "pyxel": "2.3.0",
+   "wheel": "pyxel-2.3.0-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.27.1"
+  },
+  {
+   "pyxel": "2.2.11",
+   "wheel": "pyxel-2.2.11-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.4"
+  },
+  {
+   "pyxel": "2.2.10",
+   "wheel": "pyxel-2.2.10-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.4"
+  },
+  {
+   "pyxel": "2.2.9",
+   "wheel": "pyxel-2.2.9-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.4"
+  },
+  {
+   "pyxel": "2.2.8",
+   "wheel": "pyxel-2.2.8-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.4"
+  },
+  {
+   "pyxel": "2.2.7",
+   "wheel": "pyxel-2.2.7-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.3"
+  },
+  {
+   "pyxel": "2.2.6",
+   "wheel": "pyxel-2.2.6-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.2"
+  },
+  {
+   "pyxel": "2.2.5",
+   "wheel": "pyxel-2.2.5-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.2"
+  },
+  {
+   "pyxel": "2.2.4",
+   "wheel": "pyxel-2.2.4-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.2"
+  },
+  {
+   "pyxel": "2.2.3",
+   "wheel": "pyxel-2.2.3-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.2"
+  },
+  {
+   "pyxel": "2.2.2",
+   "wheel": "pyxel-2.2.2-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.2"
+  },
+  {
+   "pyxel": "2.2.1",
+   "wheel": "pyxel-2.2.1-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.2"
+  },
+  {
+   "pyxel": "2.2.0",
+   "wheel": "pyxel-2.2.0-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.2"
+  },
+  {
+   "pyxel": "2.1.10",
+   "wheel": "pyxel-2.1.10-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.2"
+  },
+  {
+   "pyxel": "2.1.9",
+   "wheel": "pyxel-2.1.9-cp38-abi3-emscripten_3_1_61_wasm32.whl",
+   "abi": "cp38-abi3-emscripten_3_1_61",
+   "pyodide": "0.26.2"
+  },
+  {
+   "pyxel": "2.0.11",
+   "wheel": "pyxel-2.0.11-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.10",
+   "wheel": "pyxel-2.0.10-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.9",
+   "wheel": "pyxel-2.0.9-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.8",
+   "wheel": "pyxel-2.0.8-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.7",
+   "wheel": "pyxel-2.0.7-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.6",
+   "wheel": "pyxel-2.0.6-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.5",
+   "wheel": "pyxel-2.0.5-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.4",
+   "wheel": "pyxel-2.0.4-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.3",
+   "wheel": "pyxel-2.0.3-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.2",
+   "wheel": "pyxel-2.0.2-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.1",
+   "wheel": "pyxel-2.0.1-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  },
+  {
+   "pyxel": "2.0.0",
+   "wheel": "pyxel-2.0.0-cp37-abi3-emscripten_3_1_45_wasm32.whl",
+   "abi": "cp37-abi3-emscripten_3_1_45",
+   "pyodide": "0.24.1"
+  }
+ ]
+}

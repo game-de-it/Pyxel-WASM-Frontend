@@ -1,0 +1,1402 @@
+<!doctype html>
+<meta charset="utf-8" />
+<!-- No width/scale here: the activity sets 100% so a CSS pixel is a device
+     pixel, which is what makes Pyxel's whole-number scaling exact. -->
+<meta name="viewport" content="user-scalable=no" />
+<title>pwf</title>
+<style>
+  :root {
+    --bg: #141622;
+    --surface: #1d2030;
+    --surface-2: #262a3d;
+    --line: #363b52;
+    --ink: #e8e8f0;
+    --ink-soft: #b0b4c9;
+    --ink-faint: #838aa5;
+    --accent: #f26aa0;
+    --ok: #70c6a9;
+    --warn: #e9c35b;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  /* A focus ring is noise for a touch user and the only way to see where you
+     are with a pad, so it appears once a pad has actually been used. */
+  :focus { outline: none; }
+  body.pad :focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.6 system-ui, -apple-system, "Noto Sans JP", sans-serif;
+    overscroll-behavior: none;
+  }
+
+  /* ---- chrome ---- */
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: max(10px, env(safe-area-inset-top)) 16px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { font-size: 17px; font-weight: 700; letter-spacing: .04em; }
+  .brand span { color: var(--accent); }
+  .spacer { flex: 1; }
+
+  .chip {
+    font: 600 11px/1 ui-monospace, monospace;
+    letter-spacing: .04em;
+    padding: 6px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--ink-soft);
+    background: var(--surface);
+  }
+  .chip.warn { border-color: var(--warn); color: var(--warn); }
+
+  main { padding: 14px 16px 110px; }
+  .card, .gear, .btn, select.pick { scroll-margin: 84px 0 110px; }
+
+  /* ---- library ---- */
+
+  /* Media queries would see the raw device-pixel viewport, not the zoomed
+     space this UI actually lives in; sizing the tracks does see it. */
+  .grid { display: grid; gap: 10px; grid-template-columns: 1fr; }
+  /* Tiles: the picture leads and the name sits under it. Three across is what
+     fits this screen without the art getting too small to recognise. */
+  .grid.tiles { grid-template-columns: repeat(3, 1fr); }
+  .grid.tiles .entry { grid-template-columns: 1fr; gap: 0; }
+  .grid.tiles .card {
+    grid-template-columns: 1fr;
+    grid-template-areas: "shot" "title";
+    gap: 6px;
+    border-radius: 12px 12px 0 0;
+    padding: 10px 10px 8px;
+  }
+  .grid.tiles .card .sub { display: none; }
+  .grid.tiles .card h2 { text-align: center; font-size: 14px; }
+  .grid.tiles .shot { width: 100%; aspect-ratio: 3 / 2; }
+  .grid.tiles .gear {
+    width: auto;
+    height: 30px;
+    border-radius: 0 0 12px 12px;
+    border-top: 0;
+  }
+  .grid.tiles .gear svg { width: 18px; height: 18px; }
+
+  /* The picture a game was last left showing. Until it has one, a placeholder
+     keeps the row the same height so the list does not jump as they arrive. */
+  .shot { grid-area: shot; }
+  .card h2 { grid-area: title; }
+  .card .sub { grid-area: sub; }
+
+  .shot {
+    width: 96px;
+    aspect-ratio: 3 / 2;
+    border-radius: 6px;
+    background: #000;
+    object-fit: contain;
+    image-rendering: pixelated;
+    flex: none;
+  }
+  .shot.none {
+    display: grid;
+    place-items: center;
+    background: var(--surface-2);
+    color: var(--ink-faint);
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  /* The gear sits outside the card, not on it: a near miss should not start
+     the game. Two separate targets with real space between them. */
+  .entry { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+
+  .card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "shot title" "shot sub";
+    align-items: center;
+    align-content: center;
+    column-gap: 11px;
+    row-gap: 4px;
+    padding: 13px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .card:active { background: var(--surface-2); }
+  .card h2 { min-width: 0; margin: 0; font-size: 15px; font-weight: 600; }
+  .card .sub {
+    min-width: 0;
+    margin: 0;
+    font-size: 12px;
+    color: var(--ink-faint);
+    overflow-wrap: anywhere;
+  }
+
+  .gear {
+    width: 62px;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--ink-faint);
+  }
+  .gear:active { background: var(--surface-2); color: var(--ink); }
+
+  .empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--ink-faint);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    font-size: 14px;
+  }
+
+  h3.section {
+    margin: 26px 0 10px;
+    font: 600 11px/1 ui-monospace, monospace;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ---- controls ---- */
+
+  .bar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 10;
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--bg) 70%, transparent);
+  }
+
+  button, input {
+    font: inherit;
+    border-radius: 9px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 12px 14px;
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .btn:active { background: var(--surface-2); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #22101a; font-weight: 700; }
+  .btn.ghost { flex: 0 0 auto; padding: 12px; }
+  .btn.danger { border-color: var(--accent); color: var(--accent); }
+  .btn.on { background: var(--accent); border-color: var(--accent); color: #22101a; font-weight: 700; }
+  .btn:disabled { opacity: .45; }
+
+  input[type=url], input[type=text] {
+    width: 100%;
+    padding: 11px 12px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-size: 14px;
+  }
+
+  /* ---- settings sheet ---- */
+
+  .sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: var(--bg);
+    padding: max(14px, env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    display: none;
+  }
+  .sheet.on { display: block; }
+  .sheet h1 { margin: 0 0 18px; font-size: 18px; }
+  .row { display: grid; gap: 8px; margin-bottom: 18px; }
+  .row .actions { display: flex; gap: 8px; }
+  .label { font: 600 11px/1 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+
+  select.pick {
+    appearance: none;
+    text-align: center;
+    text-align-last: center;
+    padding-right: 12px;
+  }
+  select.pick option { background: var(--panel); color: var(--ink); }
+
+  .section-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .btn.small { padding: 6px 12px; font-size: 13px; }
+
+  dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 18px; font-size: 13px; }
+  dl.facts dt { color: var(--ink-faint); font-family: ui-monospace, monospace; font-size: 12px; }
+  dl.facts dd { margin: 0; font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
+
+  .log {
+    font: 12px/1.6 ui-monospace, monospace;
+    color: var(--ink-soft);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 10px 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 3.2em;
+  }
+
+  /* ---- player ---- */
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(10, 11, 18, .72);
+  }
+  .modal.on { display: flex; }
+  .modal-box {
+    width: min(440px, 100%);
+    display: grid;
+    gap: 10px;
+    padding: 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .modal-box .actions { display: flex; gap: 8px; }
+
+  #stage {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: #000;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  #stage.on { visibility: visible; pointer-events: auto; }
+  /* The frame is laid out in device pixels and scaled back down, so it is
+     wider than the stage until the transform lands. */
+  #stage iframe { display: block; width: 100%; height: 100%; border: 0; }
+
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 70;
+    max-width: 88vw;
+    padding: 10px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity .18s;
+    pointer-events: none;
+  }
+  #toast.on { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+</style>
+
+<header>
+  <div class="brand">p<span>w</span>f</div>
+  <div class="spacer"></div>
+  <button class="chip" id="runtime-chip" type="button">runtime …</button>
+</header>
+
+<main>
+  <div class="section-row">
+    <h3 class="section">ライブラリ</h3>
+    <button class="btn ghost small" id="layout-toggle" type="button">タイル表示</button>
+  </div>
+  <div class="grid" id="library"></div>
+</main>
+
+<div class="bar">
+  <button class="btn" id="add-file" type="button">.pyxapp を追加</button>
+  <button class="btn" id="add-folder" type="button">フォルダから一括追加</button>
+  <button class="btn" id="add-url" type="button">URL から追加</button>
+</div>
+
+<div class="sheet" id="game-sheet">
+  <h1 id="game-title">ゲーム</h1>
+  <dl class="facts" id="game-facts"></dl>
+
+  <div class="row">
+    <div class="label">データフォルダ</div>
+    <div class="log" id="game-data">なし</div>
+    <div class="actions">
+      <button class="btn" id="game-add-assets" type="button">assets フォルダを追加</button>
+      <button class="btn" id="game-clear-data" type="button">データを削除</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="label">更新</div>
+    <div class="log" id="game-origin">未設定</div>
+    <div class="actions">
+      <button class="btn" id="game-pick-update" type="button">.pyxapp を選び直す</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="label">サムネイル</div>
+    <div class="log" id="game-shot-note">なし</div>
+    <div class="actions">
+      <button class="btn" id="game-clear-shot" type="button">削除して撮り直す</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="label">セーブデータ</div>
+    <div class="log">書き出し先は最初の一度だけ選びます。.pyxapp と同じフォルダにしておくと迷いません</div>
+    <div class="actions">
+      <button class="btn" id="game-export-save" type="button">書き出す</button>
+      <button class="btn" id="game-import-save" type="button">読み込む</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="label">Pyxel バージョン</div>
+    <div class="log" id="game-runtime-note">既定</div>
+    <div class="actions">
+      <select class="btn pick" id="game-runtime"></select>
+    </div>
+    <div class="log" id="game-runtime-progress" hidden></div>
+  </div>
+
+  <div class="row">
+    <div class="label">仮想コントローラ</div>
+    <div class="actions" id="game-pad"></div>
+  </div>
+
+  <div class="row">
+    <div class="label">音声の再生</div>
+    <div class="log">PCM 音声（mp3 や wav）を読み込むゲームで、読み込み時のノイズが出るときに切り替えてください</div>
+    <div class="actions" id="game-audio"></div>
+  </div>
+
+  <div class="row">
+    <div class="label">タップしたとき</div>
+    <div class="actions" id="game-resume"></div>
+  </div>
+
+  <div class="row">
+    <div class="actions">
+      <button class="btn danger" id="game-remove" type="button">ライブラリから削除</button>
+      <button class="btn ghost" id="game-close" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="settings">
+  <h1>ランタイム</h1>
+
+  <dl class="facts" id="runtime-facts"></dl>
+
+  <div class="row">
+    <div class="label">導入済みランタイム</div>
+    <div class="actions" id="runtime-list"></div>
+  </div>
+
+  <div class="row">
+    <div class="label">更新元 manifest</div>
+    <input type="url" id="update-url" placeholder="https://example.com/pwf/manifest.json" inputmode="url" />
+    <div class="actions">
+      <button class="btn" id="check" type="button">更新を確認</button>
+      <button class="btn primary" id="apply" type="button" disabled>適用</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="label">状況</div>
+    <div class="log" id="update-log">未確認</div>
+  </div>
+
+  <div class="row">
+    <div class="actions">
+      <button class="btn primary" id="reload" type="button" hidden>ランタイムを読み込み直す</button>
+      <button class="btn" id="rollback" type="button">前のバンドルへ戻す</button>
+      <button class="btn ghost" id="close-settings" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="url-modal">
+  <div class="modal-box">
+    <div class="label">.pyxapp の URL</div>
+    <input type="url" id="url-input" placeholder="https://…/game.pyxapp" inputmode="url" />
+    <div class="actions">
+      <button class="btn" id="url-cancel" type="button">キャンセル</button>
+      <button class="btn primary" id="url-ok" type="button">追加</button>
+    </div>
+  </div>
+</div>
+
+<div id="stage"></div>
+<div id="toast"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const host = window.pwfHost;
+
+  const IDLE_SCRIPT = [
+    "import pyxel",
+    "pyxel.init(128, 128, title='pwf', fps=20)",
+    "def _u():",
+    "    pass",
+    "def _d():",
+    "    pyxel.cls(1)",
+    "    pyxel.text(43, 58, 'pwf', 14)",
+    "    pyxel.text(31, 70, 'ready to play', 5)",
+    "pyxel.run(_u, _d)",
+  ].join("\n");
+
+  let runtimeState = null;
+  let catalogState = null;
+  let pendingRuntime = null;
+  let frame = null;
+  let playerReady = false;
+  let playerWarm = false;
+  let pendingPlay = null;
+  let lastPlay = null;
+  let updateReady = false;
+
+  // ---- small helpers ----
+
+  let toastTimer = null;
+  function toast(message) {
+    const el = $("toast");
+    el.textContent = message;
+    el.classList.add("on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("on"), 2600);
+  }
+
+  const logUpdate = (message) => { $("update-log").textContent = message; };
+
+  const bytes = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.round(n / 1024) + " KB");
+
+  // btoa() on a whole file at once overruns the argument limit; chunk it.
+  function toBase64(buffer) {
+    const view = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < view.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, view.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+  }
+
+  // ---- library ----
+
+  // Which way the library is laid out, remembered between runs.
+  let layout = "list";
+  try {
+    layout = localStorage.getItem("pwf-layout") === "tiles" ? "tiles" : "list";
+  } catch (err) {
+    // Storage can be unavailable; the default is fine.
+  }
+
+  function renderLibrary() {
+    const entries = JSON.parse(host.library());
+    const grid = $("library");
+    grid.innerHTML = "";
+    grid.classList.toggle("tiles", layout === "tiles");
+    $("layout-toggle").textContent = layout === "tiles" ? "リスト表示" : "タイル表示";
+
+    if (!entries.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent =
+        "まだアプリがありません。.pyxapp を端末から、または URL から追加してください。" +
+        "assets フォルダは追加後、各ゲームの設定から結び付けます。";
+      grid.appendChild(empty);
+      return;
+    }
+
+    for (const entry of entries) {
+      const entryRow = document.createElement("div");
+      entryRow.className = "entry";
+
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const shot = document.createElement(entry.shot ? "img" : "div");
+      shot.className = entry.shot ? "shot" : "shot none";
+      if (entry.shot) {
+        // The stamp changes when a new frame is stored, which is what makes the
+        // browser fetch it again.
+        shot.src = `/appshot/${entry.id}.png?v=${entry.shot}`;
+        shot.alt = "";
+      } else {
+        shot.textContent = (entry.title || entry.name || "?").trim().charAt(0).toUpperCase();
+      }
+      // A div by default, which a pad cannot reach and a keyboard cannot press.
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          card.click();
+        }
+      };
+
+      const title = document.createElement("h2");
+      title.textContent = entry.title || entry.name;
+
+      const sub = document.createElement("p");
+      sub.className = "sub";
+      sub.textContent = [
+        entry.author,
+        bytes(entry.size),
+        entry.data ? `データ ${entry.data} ファイル` : null,
+        entry.source,
+      ].filter(Boolean).join(" · ");
+
+      const gear = document.createElement("button");
+      gear.className = "gear";
+      gear.type = "button";
+      gear.innerHTML = `<svg viewBox="0 0 24 24" width="26" height="26" fill="none"
+        stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3.1" />
+        <path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9
+                 M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9" />
+      </svg>`;
+      gear.setAttribute("aria-label", `${entry.title || entry.name} の設定`);
+      gear.onclick = (e) => {
+        e.stopPropagation();
+        openGameSheet(entry.id);
+      };
+
+      card.onclick = () => play(entry);
+      card.append(shot, title, sub);
+      entryRow.append(card, gear);
+      grid.appendChild(entryRow);
+    }
+  }
+
+  // ---- per-game settings ----
+
+  const PAD_MODES = [
+    ["auto", "自動", "物理パッドを検出したら消す"],
+    ["off", "OFF", "常に隠す"],
+    ["on", "ON", "常に表示"],
+  ];
+
+  // Leaving a game only pauses it, so a tap can pick the same one back up.
+  const AUDIO_MODES = [
+    ["pyxel", "Pyxel", "ゲームの音は Pyxel が鳴らす（既定）"],
+    ["browser", "ブラウザ", "PCM 音声はブラウザに任せる（実験的）"],
+  ];
+
+  const RESUME_MODES = [
+    ["continue", "続きから", "同じゲームなら止めたところから再開する"],
+    ["restart", "最初から", "毎回タイトルから起動する"],
+  ];
+
+  let sheetId = null;
+
+  const findEntry = (id) =>
+    JSON.parse(host.library()).find((entry) => entry.id === id) || null;
+
+  function openGameSheet(id) {
+    sheetId = id;
+    renderGameSheet();
+    $("game-sheet").classList.add("on");
+  }
+
+  function renderGameSheet() {
+    const entry = sheetId && findEntry(sheetId);
+    if (!entry) {
+      $("game-sheet").classList.remove("on");
+      sheetId = null;
+      return;
+    }
+
+    $("game-title").textContent = entry.title || entry.name;
+
+    const facts = $("game-facts");
+    facts.innerHTML = "";
+    for (const [key, value] of [
+      ["ファイル", entry.name],
+      ["作者", entry.author],
+      ["容量", bytes(entry.size)],
+      ["取得元", entry.source],
+      ["バージョン", entry.version],
+      ["更新", entry.updatedAt ? stamp(entry.updatedAt) : ""],
+      ["ライセンス", entry.license],
+    ]) {
+      if (!value) continue;
+      const dt = document.createElement("dt");
+      dt.textContent = key;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      facts.append(dt, dd);
+    }
+
+    // An empty string is how a cleared picture is recorded, so treat it as none.
+    const hasShot = !!entry.shot;
+    $("game-shot-note").textContent = hasShot
+      ? "撮影済み — 撮り直すには一度削除してください"
+      : "なし — 次に遊んだときに撮られます";
+    $("game-clear-shot").disabled = !hasShot;
+
+    $("game-origin").textContent = entry.origin
+      ? "このファイルを追跡中 — 上書きすれば次に開いたとき反映されます"
+      : "未設定 — 選び直すと、以後は上書きだけで反映されます";
+    $("game-data").textContent = entry.data
+      ? `${entry.data} ファイル`
+      : "なし — このゲームが assets フォルダを読むなら、下から追加してください";
+    $("game-clear-data").disabled = !entry.data;
+
+    const choices = (row, modes, current, apply) => {
+      row.innerHTML = "";
+      for (const [mode, label, hint] of modes) {
+        const button = document.createElement("button");
+        button.className = "btn" + (mode === current ? " on" : "");
+        button.type = "button";
+        button.textContent = label;
+        button.title = hint;
+        button.onclick = () => apply(mode);
+        row.appendChild(button);
+      }
+    };
+
+    renderRuntimePicker(entry);
+
+    choices($("game-pad"), PAD_MODES, entry.pad || "auto",
+      (mode) => host.setPad(entry.id, mode));
+    choices($("game-audio"), AUDIO_MODES, entry.audio || "pyxel",
+      (mode) => host.setAudioMode(entry.id, mode));
+    choices($("game-resume"), RESUME_MODES, entry.resume || "continue",
+      (mode) => host.setResume(entry.id, mode));
+  }
+
+  // Versions already on the device: the bundle's own, whatever layers it
+  // shipped with, and anything fetched since.
+  function haveRuntime(version) {
+    if (!version || version === runtimeState?.pyxel) return true;
+    if ((runtimeState?.variants || []).some((v) => v.pyxel === version)) return true;
+    return (catalogState?.installed || []).some((v) => v.pyxel === version);
+  }
+
+  function renderRuntimePicker(entry) {
+    const note = $("game-runtime-note");
+    const pick = $("game-runtime");
+    const versions = catalogState?.versions || [];
+
+    note.textContent = versions.length
+      ? "音の詰まりなど、特定の版でしか安定しないゲーム向けです。" +
+        "既定と違う版にすると起動はコールドブートになります"
+      : "版の一覧を読み込めませんでした";
+
+    pick.innerHTML = "";
+    const option = (value, label) => {
+      const el = document.createElement("option");
+      el.value = value;
+      el.textContent = label;
+      pick.appendChild(el);
+    };
+    option("", `既定 (${runtimeState?.pyxel || "?"})`);
+    for (const v of versions) {
+      if (v.pyxel === runtimeState?.pyxel) continue;
+      // A version built against this interpreter's ABI costs a wheel; the rest
+      // bring their own, and the difference is worth showing before the tap.
+      const platform = runtimeState?.platform || "";
+      const size = platform && v.abi?.endsWith(platform) ? "5MB" : "20MB";
+      option(v.pyxel, haveRuntime(v.pyxel) ? v.pyxel : `${v.pyxel} — 取得 ${size}`);
+    }
+    pick.value = entry.runtime || "";
+
+    pick.onchange = () => {
+      const want = pick.value;
+      if (!want || haveRuntime(want)) {
+        host.setRuntime(entry.id, want);
+        return;
+      }
+      pendingRuntime = { id: entry.id, version: want };
+      $("game-runtime-progress").hidden = false;
+      $("game-runtime-progress").textContent = `pyxel ${want} を取得しています…`;
+      pick.disabled = true;
+      host.installRuntime(want);
+    };
+  }
+
+  // Every Pyxel on the device: the bundle's own and its layers cannot be
+  // removed (they are inside the APK); anything fetched since can be.
+  function renderRuntimeList() {
+    const row = $("runtime-list");
+    if (!row) return;
+    row.innerHTML = "";
+    const bundled = new Set([runtimeState?.pyxel]);
+    for (const v of runtimeState?.variants || []) bundled.add(v.pyxel);
+
+    const add = (version, removable) => {
+      const button = document.createElement("button");
+      button.className = "btn";
+      button.type = "button";
+      button.textContent = removable ? `${version} を削除` : `${version}（同梱）`;
+      button.disabled = !removable;
+      if (removable) {
+        // A dialog is not available here, so arming the button is the confirmation.
+        let armed = false;
+        button.onclick = () => {
+          if (!armed) {
+            armed = true;
+            button.textContent = "もう一度押すと削除";
+            setTimeout(() => {
+              armed = false;
+              button.textContent = `${version} を削除`;
+            }, 4000);
+            return;
+          }
+          host.removeRuntime(version);
+        };
+      }
+      row.appendChild(button);
+    };
+
+    for (const version of [...bundled].filter(Boolean).sort()) add(version, false);
+    for (const v of catalogState?.installed || []) {
+      if (!bundled.has(v.pyxel)) add(v.pyxel, true);
+    }
+  }
+
+  $("add-folder").onclick = () => host.pickFolder();
+  // The shell and the player share an origin, so this is the same store the
+  // games write to. Games that keep progress there rather than in files would
+  // otherwise have nothing in their backup.
+  const webStorage = () => {
+    try {
+      const out = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        out[key] = localStorage.getItem(key);
+      }
+      return JSON.stringify(out);
+    } catch (err) {
+      return "";
+    }
+  };
+
+  $("game-clear-shot").onclick = () => sheetId && host.clearShot(sheetId);
+  $("game-export-save").onclick = () => sheetId && host.exportSave(sheetId, webStorage());
+  $("game-import-save").onclick = () => sheetId && host.importSave(sheetId);
+
+  $("layout-toggle").onclick = () => {
+    layout = layout === "tiles" ? "list" : "tiles";
+    try {
+      localStorage.setItem("pwf-layout", layout);
+    } catch (err) {
+      // Not remembered, but still switched for this run.
+    }
+    renderLibrary();
+  };
+
+  $("game-pick-update").onclick = () => sheetId && host.pickUpdate(sheetId);
+  $("game-add-assets").onclick = () => sheetId && host.pickAssets(sheetId);
+  $("game-clear-data").onclick = () => sheetId && host.clearData(sheetId);
+  $("game-close").onclick = () => {
+    $("game-sheet").classList.remove("on");
+    sheetId = null;
+  };
+
+  // Removal is one tap away from a game the user might just be inspecting, so
+  // it asks for the tap twice.
+  let removeArmed = null;
+  $("game-remove").onclick = () => {
+    if (!sheetId) return;
+    if (removeArmed !== sheetId) {
+      removeArmed = sheetId;
+      $("game-remove").textContent = "もう一度押すと削除";
+      setTimeout(() => {
+        if (removeArmed !== sheetId) return;
+        removeArmed = null;
+        $("game-remove").textContent = "ライブラリから削除";
+      }, 4000);
+      return;
+    }
+    removeArmed = null;
+    $("game-remove").textContent = "ライブラリから削除";
+    host.remove(sheetId);
+    $("game-sheet").classList.remove("on");
+    sheetId = null;
+  };
+
+  // ---- player ----
+
+  let frameRuntime = "";
+
+  function ensurePlayer(dir = frameRuntime) {
+    if (frame) return;
+    playerReady = false;
+    playerWarm = false;
+    frameRuntime = dir || "";
+    frame = document.createElement("iframe");
+    frame.allow = "autoplay; gamepad; fullscreen";
+    frame.src =
+      `player.html?rt=${encodeURIComponent(runtimeState.bundle)}` +
+      `&px=${encodeURIComponent(frameRuntime)}`;
+    $("stage").appendChild(frame);
+  }
+
+
+  /** Throws the interpreter away. Only worth it once one has gone bad. */
+  function rebuildPlayer(replay) {
+    frame?.remove();
+    frame = null;
+    pendingPlay = replay || null;
+    ensurePlayer();
+  }
+
+  const tellPlayer = (msg) => {
+    if (frame && playerReady) frame.contentWindow.postMessage(msg, location.origin);
+  };
+
+  // A picture of the game, taken only when the card has none. A game that is
+  // already pictured keeps that picture: overwriting it on every launch would
+  // mean whatever happened to be on screen six seconds in, and would leave the
+  // 撮り直す button with nothing to do. Within the session that does take one,
+  // later frames replace earlier ones, so a loading screen gives way to the
+  // game itself.
+  let shotTimer = null;
+
+  const startShots = (id) => {
+    stopShots();
+    const take = () => host.captureShot(id);
+    shotTimer = setTimeout(function again() {
+      take();
+      shotTimer = setTimeout(again, 20000);
+    }, 6000);
+  };
+
+  const stopShots = () => {
+    clearTimeout(shotTimer);
+    shotTimer = null;
+  };
+
+  async function play(entry) {
+    // A page holds one interpreter, so a game pinned to another Pyxel means
+    // starting the frame over -- a cold boot rather than the usual warm swap.
+    const layer = entry.runtime || "";
+    if (frame && frameRuntime !== layer) {
+      frame.remove();
+      frame = null;
+      playerReady = false;
+      playerWarm = false;
+    }
+    ensurePlayer(layer);
+    $("stage").classList.add("on");
+    // Hand keys and pad to the frame: the shell must not still hold a focused
+    // card that Enter would press again, and a gamepad is only readable by the
+    // document that has focus.
+    document.activeElement?.blur?.();
+    frame.focus();
+    if (!entry.shot) startShots(entry.id);
+    host.setPlaying(true);
+    tellPlayer({ type: "audio", on: true });
+
+    const response = await fetch(`/apps/${entry.id}.pyxapp`);
+    if (!response.ok) {
+      toast("アプリを読み込めませんでした");
+      closePlayer();
+      return;
+    }
+    const message = {
+      type: "play",
+      name: entry.name.endsWith(".pyxapp") ? entry.name : entry.name + ".pyxapp",
+      base64: toBase64(await response.arrayBuffer()),
+      appId: entry.id,
+      // Apps that shipped with a data folder need it in place before they run.
+      hasData: !!entry.data,
+      rev: entry.rev || 0,
+      audio: entry.audio || "pyxel",
+      pad: entry.pad || "auto",
+      prefer: entry.resume || "continue",
+    };
+
+    lastPlay = message;
+    if (playerReady) {
+      frame.contentWindow.postMessage(message, location.origin);
+    } else {
+      pendingPlay = message;
+    }
+  }
+
+  function closePlayer() {
+    // Keep whatever the game wrote before it stops being looked at, and a
+    // picture of where it was left.
+    tellPlayer({ type: "snapshot" });
+    stopShots();
+    $("stage").classList.remove("on");
+    renderLibrary();
+    // The interpreter stays warm, but a game nobody is looking at should not
+    // still be making noise.
+    tellPlayer({ type: "audio", on: false });
+    host.setPlaying(false);
+  }
+
+  // The activity routes the hardware back key here while a game is on screen.
+  // Returns whether the page took the back press; the activity leaves if not.
+  // ---- gamepad navigation -------------------------------------------------
+  // The device this runs on is a handheld: reaching for the screen to start a
+  // game is the odd part, not using the pad. Movement is spatial rather than in
+  // document order, because the library is a grid of card-and-gear pairs and
+  // document order runs across it in a way nobody would predict.
+  const NAV_FIRST_REPEAT = 380;
+  const NAV_REPEAT = 120;
+
+  const navLayer = () => {
+    for (const id of ["url-modal", "game-sheet", "settings"]) {
+      if ($(id).classList.contains("on")) return $(id);
+    }
+    return document.body;
+  };
+
+  const navTargets = (layer) =>
+    [...layer.querySelectorAll('button, select, [role="button"]')]
+      .filter((el) => !el.disabled && el.offsetParent !== null);
+
+  const navFocus = (el) => {
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: "nearest" });
+  };
+
+  const navMove = (dx, dy) => {
+    const items = navTargets(navLayer());
+    if (!items.length) return;
+    const current = items.includes(document.activeElement) ? document.activeElement : null;
+    if (!current) {
+      navFocus(items[0]);
+      return;
+    }
+    const from = current.getBoundingClientRect();
+
+    // Edge to edge, not centre to centre. A library row is a wide card beside a
+    // small gear: by centres the card looks hundreds of pixels away and loses to
+    // whatever else happens to sit nearer, when it is in fact right there.
+    let best = null;
+    let bestScore = Infinity;
+    for (const el of items) {
+      if (el === current) continue;
+      const r = el.getBoundingClientRect();
+      const along =
+        dx > 0 ? r.left - from.right
+        : dx < 0 ? from.left - r.right
+        : dy > 0 ? r.top - from.bottom
+        : from.top - r.bottom;
+      if (along < -2) continue;                       // behind, or overlapping
+
+      // Anything that lines up on the other axis is a candidate in this
+      // direction; anything that does not is only a fallback.
+      const overlap = dx
+        ? Math.min(from.bottom, r.bottom) - Math.max(from.top, r.top)
+        : Math.min(from.right, r.right) - Math.max(from.left, r.left);
+      const off = overlap > 0 ? 0 : (dx
+        ? Math.min(Math.abs(r.top - from.bottom), Math.abs(from.top - r.bottom))
+        : Math.min(Math.abs(r.left - from.right), Math.abs(from.left - r.right)));
+
+      // Something that lines up always beats something that does not, however
+      // near. Without that rule, pressing left from a control with nothing to
+      // its left lands on whatever sits far away at the bottom of the page.
+      const score = Math.max(along, 0) + (off > 0 ? 100000 + off * 3 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = el;
+      }
+    }
+    // Nothing lined up, and nothing near enough off to the side to be what was
+    // meant: stay put rather than jump somewhere unrelated.
+    if (best && bestScore >= 100000 && bestScore - 100000 > 720) best = null;
+    if (best) navFocus(best);
+  };
+
+  const PAD_KEYS = ["up", "down", "left", "right", "a", "b"];
+  const padSince = {};
+  let padLayer = null;
+  // Where to put focus back when a sheet closes: the gear that opened it.
+  let navReturn = null;
+
+  const padHeld = () => {
+    const held = new Set();
+    for (const pad of navigator.getGamepads?.() || []) {
+      if (!pad) continue;
+      const [x = 0, y = 0] = pad.axes;
+      const down = (i) => pad.buttons[i]?.pressed;
+      if (down(12) || y < -0.5) held.add("up");
+      if (down(13) || y > 0.5) held.add("down");
+      if (down(14) || x < -0.5) held.add("left");
+      if (down(15) || x > 0.5) held.add("right");
+      if (down(0)) held.add("a");
+      if (down(1)) held.add("b");
+    }
+    return held;
+  };
+
+  const navAct = (key) => {
+    if (key === "b") {
+      window.pwfBack();
+      return;
+    }
+    if (key === "a") {
+      const layer = navLayer();
+      const items = navTargets(layer);
+      if (items.includes(document.activeElement)) {
+        navReturn = document.activeElement;
+        document.activeElement.click();
+      } else {
+        navFocus(items[0]);
+      }
+      return;
+    }
+    navMove(key === "left" ? -1 : key === "right" ? 1 : 0,
+            key === "up" ? -1 : key === "down" ? 1 : 0);
+  };
+
+  function pollPad() {
+    requestAnimationFrame(pollPad);
+    // While a game is up it owns the pad; the launcher must not also react.
+    if ($("stage").classList.contains("on")) return;
+
+    const held = padHeld();
+    const now = performance.now();
+    for (const key of PAD_KEYS) {
+      if (!held.has(key)) {
+        delete padSince[key];
+        continue;
+      }
+      document.body.classList.add("pad");
+      const due = padSince[key];
+      if (due === undefined) {
+        padSince[key] = now + NAV_FIRST_REPEAT;
+        navAct(key);
+      } else if (key !== "a" && key !== "b" && now >= due) {
+        padSince[key] = now + NAV_REPEAT;
+        navAct(key);
+      }
+    }
+
+    // A sheet that just opened should be where the pad already is, and closing
+    // one should leave it where it was opened from.
+    const layer = navLayer();
+    if (layer !== padLayer) {
+      padLayer = layer;
+      if (document.body.classList.contains("pad")) {
+        if (layer === document.body && navReturn?.isConnected) navFocus(navReturn);
+        else if (!layer.contains(document.activeElement)) navFocus(navTargets(layer)[0]);
+      }
+    }
+  }
+
+  // Some handhelds deliver their d-pad as key events rather than through the
+  // Gamepad API, and a keyboard should work regardless.
+  const NAV_KEYS = {
+    ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+    Escape: "b", Backspace: "b",
+  };
+
+  // Enter on a focused control clicks it natively, so only remember where from.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") navReturn = document.activeElement;
+    const key = NAV_KEYS[e.key];
+    if (!key) return;
+    // A text field owns its own arrows and backspace.
+    if (e.target?.tagName === "INPUT" || e.target?.tagName === "TEXTAREA") return;
+    if ($("stage").classList.contains("on")) return;
+    e.preventDefault();
+    document.body.classList.add("pad");
+    navAct(key);
+  });
+
+  // Touching the screen puts the ring away again.
+  document.addEventListener("pointerdown", () => {
+    document.body.classList.remove("pad");
+    document.activeElement?.blur?.();
+  });
+
+  requestAnimationFrame(pollPad);
+
+  window.pwfBack = () => {
+    for (const id of ["url-modal", "game-sheet", "settings"]) {
+      if ($(id).classList.contains("on")) {
+        $(id).classList.remove("on");
+        if (id === "game-sheet") sheetId = null;
+        return true;
+      }
+    }
+    if ($("stage").classList.contains("on")) {
+      closePlayer();
+      return true;
+    }
+    return false;
+  };
+
+  window.addEventListener("message", (e) => {
+    if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow) return;
+    const msg = e.data || {};
+
+    if (msg.type === "player-ready") {
+      playerReady = true;
+      frame.contentWindow.postMessage({ type: "warm", script: IDLE_SCRIPT }, location.origin);
+      if (pendingPlay) {
+        frame.contentWindow.postMessage(pendingPlay, location.origin);
+        pendingPlay = null;
+      }
+    } else if (msg.type === "player-warm") {
+      playerWarm = true;
+      // Pyodide and the wheel loaded, so this bundle is not a rollback candidate.
+      host.bootOk();
+      host.log(`runtime warm in ${msg.ms} ms`);
+      refreshRuntime();
+    } else if (msg.type === "player-resumed") {
+      host.log(`resumed ${msg.name}`);
+    } else if (msg.type === "player-swapped") {
+      host.log(`swapped ${msg.name} in ${msg.ms} ms`);
+    } else if (msg.type === "player-tainted") {
+      // The previous app died with an error; start the runtime over.
+      toast("ランタイムを作り直しています…");
+      rebuildPlayer(lastPlay);
+    } else if (msg.type === "player-quit") {
+      if ($("stage").classList.contains("on")) {
+        toast("ゲームが終了しました");
+        closePlayer();
+      }
+    } else if (msg.type === "save-data") {
+      host.beginSave(msg.appId);
+      for (const file of msg.files) host.putSave(msg.appId, file.path, file.base64);
+      host.endSave(msg.appId);
+      host.log(`saved ${msg.files.length} files` + (msg.skipped ? ` (${msg.skipped} too large)` : ""));
+    } else if (msg.type === "data-ready") {
+      host.log(`data ${msg.files} files in ${msg.ms} ms`);
+    } else if (msg.type === "audio-state") {
+      host.log(`audio ${msg.state}`);
+    } else if (msg.type === "player-failed") {
+      toast(msg.reason);
+      closePlayer();
+    }
+  });
+
+  // ---- runtime + updates ----
+
+  function refreshRuntime() {
+    runtimeState = JSON.parse(host.runtime());
+    try {
+      catalogState = JSON.parse(host.catalog());
+    } catch (err) {
+      catalogState = null;
+    }
+    const chip = $("runtime-chip");
+    chip.textContent = `bundle ${runtimeState.bundle} · pyxel ${runtimeState.pyxel}`;
+    chip.classList.toggle("warn", runtimeState.unconfirmed);
+
+    renderRuntimeList();
+    const facts = $("runtime-facts");
+    facts.innerHTML = "";
+    const rows = [
+      ["bundle", String(runtimeState.bundle)],
+      ["pyxel", runtimeState.pyxel],
+      ["pyodide", runtimeState.pyodide],
+      ["platform", runtimeState.platform],
+      ["abi", runtimeState.abi],
+      ["取得元", runtimeState.source === "downloaded" ? "ダウンロード済み" : "APK 同梱"],
+      ["起動確認", runtimeState.unconfirmed ? "未確認" : "済み"],
+    ];
+    for (const [key, value] of rows) {
+      const dt = document.createElement("dt");
+      dt.textContent = key;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      facts.append(dt, dd);
+    }
+    $("rollback").disabled = !runtimeState.canRollback;
+  }
+
+  // ---- events from the host ----
+
+  const stamp = (ms) => {
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  window.pwfEvent = (type, payloadJson) => {
+    const payload = JSON.parse(payloadJson);
+
+    switch (type) {
+      case "library-added":
+        renderLibrary();
+        toast(`${payload.title || payload.name} を追加しました`);
+        break;
+      case "bulk-progress":
+        toast(`${payload.done + 1}/${payload.total} ${payload.name}`);
+        break;
+      case "bulk-done":
+        renderLibrary();
+        toast(
+          `${payload.added} 件を追加、${payload.updated} 件を更新` +
+          (payload.same ? `、${payload.same} 件は変更なし` : ""),
+        );
+        break;
+      case "save-exported":
+        toast(`${payload.name} に ${payload.files} ファイルを書き出しました`);
+        break;
+      case "save-imported": {
+        let keys = 0;
+        try {
+          const stored = JSON.parse(payload.web || "{}");
+          for (const [key, value] of Object.entries(stored)) {
+            localStorage.setItem(key, value);
+            keys++;
+          }
+        } catch (err) {
+          // Nothing to put back, or storage is unavailable.
+        }
+        toast(`セーブを ${payload.files} ファイル読み込みました` + (keys ? `（設定 ${keys} 件）` : ""));
+        break;
+      }
+      case "runtime-progress":
+        if ($("game-runtime-progress")) {
+          $("game-runtime-progress").hidden = false;
+          $("game-runtime-progress").textContent =
+            `${payload.label} — ${payload.percent}%`;
+        }
+        break;
+      case "runtime-installed":
+        catalogState = JSON.parse(host.catalog());
+        $("game-runtime").disabled = false;
+        $("game-runtime-progress").hidden = true;
+        if (pendingRuntime && pendingRuntime.version === payload.pyxel) {
+          host.setRuntime(pendingRuntime.id, pendingRuntime.version);
+          toast(`pyxel ${payload.pyxel} を取得しました`);
+          pendingRuntime = null;
+        }
+        renderGameSheet();
+        break;
+      case "library-updated":
+        renderLibrary();
+        renderGameSheet();
+        toast(`${payload.title || payload.name} を更新しました`);
+        break;
+      case "library-changed":
+        renderLibrary();
+        renderGameSheet();
+        break;
+      case "assets-added":
+        renderLibrary();
+        renderGameSheet();
+        toast(`${payload.name} を追加しました (${payload.files} ファイル)`);
+        break;
+      case "update-checked":
+        updateReady = payload.available;
+        $("apply").disabled = !payload.available;
+        logUpdate(payload.available
+          ? `bundle ${payload.active} → ${payload.remote} が利用できます\n` +
+            `pyxel ${payload.pyxel} / pyodide ${payload.pyodide}\n` +
+            `${payload.files} ファイル / ${bytes(payload.bytes)}`
+          : `最新です (bundle ${payload.active})`);
+        break;
+      case "update-progress":
+        logUpdate(`取得中 ${payload.done}/${payload.total}\n${payload.file}`);
+        break;
+      case "update-applied":
+        logUpdate(`bundle ${payload.bundle} を適用しました\n` +
+          `ダウンロード ${payload.fetched} / ローカル流用 ${payload.reused}\n` +
+          `読み込み直すと新しいランタイムに切り替わります`);
+        $("apply").disabled = true;
+        $("reload").hidden = false;
+        refreshRuntime();
+        toast("更新を適用しました");
+        break;
+      case "update-rolled-back":
+        logUpdate("前のバンドルへ戻しました。読み込み直してください");
+        $("reload").hidden = false;
+        refreshRuntime();
+        break;
+      case "error":
+        if (pendingRuntime) {
+          pendingRuntime = null;
+          $("game-runtime").disabled = false;
+          $("game-runtime-progress").hidden = true;
+          renderGameSheet();
+        }
+        toast(payload.message);
+        if (payload.op === "check" || payload.op === "apply") logUpdate(`失敗: ${payload.message}`);
+        break;
+    }
+  };
+
+  // ---- wiring ----
+
+  $("add-file").onclick = () => host.pickFile();
+
+  $("add-url").onclick = () => {
+    $("url-input").value = "";
+    $("url-modal").classList.add("on");
+    $("url-input").focus();
+  };
+  $("url-cancel").onclick = () => $("url-modal").classList.remove("on");
+  $("url-ok").onclick = () => {
+    const url = $("url-input").value.trim();
+    if (!url) return;
+    $("url-modal").classList.remove("on");
+    toast("取得しています…");
+    host.addUrl(url);
+  };
+
+  $("runtime-chip").onclick = () => {
+    $("update-url").value = host.updateUrl();
+    refreshRuntime();
+    $("settings").classList.add("on");
+  };
+  $("close-settings").onclick = () => $("settings").classList.remove("on");
+
+  $("check").onclick = () => {
+    host.setUpdateUrl($("update-url").value.trim());
+    logUpdate("確認しています…");
+    host.checkUpdate();
+  };
+  $("apply").onclick = () => {
+    if (!updateReady) return;
+    logUpdate("適用しています…");
+    host.applyUpdate();
+  };
+  $("rollback").onclick = () => host.rollback();
+  $("reload").onclick = () => host.reloadRuntime();
+
+  // ---- boot ----
+
+  // The page now measures in device pixels, so its own furniture needs scaling
+  // back to a readable size. The player stage is exempt: it wants raw pixels.
+  const density = parseFloat(host.density()) || 1;
+  if (density > 1) {
+    document.documentElement.style.zoom = String(density);
+    $("stage").style.zoom = String(1 / density);
+  }
+
+  refreshRuntime();
+  renderLibrary();
+  $("update-url").value = host.updateUrl();
+
+  // Booting Pyodide costs seconds; start it now, while the library is on screen.
+  ensurePlayer();
+</script>
