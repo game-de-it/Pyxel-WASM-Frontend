@@ -805,7 +805,8 @@
       button.className = "btn";
       button.type = "button";
       let armed = false;
-      const label = () => `${pkg.name} ${pkg.version || ""} を削除`.trim();
+      const built = pkg.python ? ` [${pkg.python}]` : "";
+      const label = () => `${pkg.name} ${pkg.version || ""}${built} を削除`.trim();
       button.textContent = label();
       button.onclick = () => {
         if (!armed) {
@@ -817,7 +818,7 @@
           }, 4000);
           return;
         }
-        host.removePackage(pkg.name);
+        host.removePackage(pkg.name, pkg.abi || "");
       };
       row.appendChild(button);
     }
@@ -831,8 +832,26 @@
     const chosen = (entry.packages || "").split(",").map((s) => s.trim()).filter(Boolean);
     const missing = scanned.id === entry.id ? scanned.missing : [];
 
+    // Wheels are built for one interpreter, so what this game can load
+    // follows the Pyxel it is pinned to. Say which, or the list is a riddle
+    // when the same package shows up twice under settings.
+    const on = entry.runtime ? `pyxel ${entry.runtime}` : "既定の pyxel";
+    // A version change leaves the names but not the wheels: those were built
+    // for the interpreter this game no longer runs on, so say so plainly
+    // rather than letting the game stop at the import again.
+    let abi = "";
+    try {
+      abi = (JSON.parse(host.packageTarget(entry.id) || "{}") || {}).abi || "";
+    } catch (err) {
+      abi = "";
+    }
+    const held = new Set(
+      packageState.filter((p) => p.abi === abi).map((p) => (p.name || "").toLowerCase()),
+    );
+    const stale = chosen.filter((n) => !held.has(n.toLowerCase()));
     note.textContent = chosen.length
-      ? `読み込む: ${chosen.join(", ")}`
+      ? `読み込む: ${chosen.join(", ")}（${on} 用）` +
+        (stale.length ? ` — ${stale.join(", ")} はこの版の分がまだありません` : "")
       : "なし — ゲームが pymunk などを import するなら、下から調べて取得してください";
 
     row.innerHTML = "";
@@ -1443,12 +1462,17 @@
       case "packages-scanned":
         // The native side reads the imports out of the source; the interpreter
         // is the only thing that knows which of them it already has.
-        if (playerReady && payload.missing?.length) {
+        // Only the interpreter running *this* game can be asked: a warm
+        // player pinned to another Pyxel is a different Python, and its
+        // answer would not be about this game at all.
+        if (playerReady && playingId === payload.id && payload.missing?.length) {
           tellPlayer({ type: "probe", id: payload.id, names: payload.missing });
         } else {
           scanned = { id: payload.id, missing: payload.missing || [] };
           renderGameSheet();
-          toast("不足しているモジュールはありません");
+          toast(scanned.missing.length
+            ? `不足: ${scanned.missing.join(", ")}`
+            : "不足しているモジュールはありません");
         }
         break;
       case "package-progress":

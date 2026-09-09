@@ -27,6 +27,102 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
     private val dir = File(ctx.filesDir, "pypkg").apply { mkdirs() }
     private val index = File(dir, "index.json")
 
+    /**
+     * What a particular Pyxel version's interpreter can load.
+     *
+     * A wheel is built against one interpreter, and a game pinned to an older
+     * Pyxel runs on an older Pyodide with a different Python and a different
+     * ABI. Everything here is therefore asked in terms of a runtime rather than
+     * of "the" runtime.
+     */
+    data class Target(
+        val runtime: String,     // "" for the bundle's own Pyxel
+        val cp: String,          // cp314
+        val abi: String,         // 2026_0
+        val platform: String,    // emscripten_5_0_3
+        val pyodide: String,     // 314.0.4, for that distribution's own packages
+        val lock: JSONObject,
+    )
+
+    /** The interpreter behind a game's chosen Pyxel, or null if it is unknown. */
+    fun targetFor(runtimeVersion: String): Target? {
+        val version = runtimeVersion.trim()
+        val lock = lockFor(version) ?: return null
+        val info = lock.optJSONObject("info") ?: return null
+        val python = info.optString("python").split(".")
+        if (python.size < 2) return null
+
+        // A version with its own interpreter says so in its descriptor;
+        // anything else is riding on the bundle's.
+        var pyodide = runtime.manifest().optString("pyodide")
+        val installed = runtime.installedRuntimes()
+        for (i in 0 until installed.length()) {
+            val it = installed.getJSONObject(i)
+            if (it.optString("pyxel") == version && !it.optBoolean("shared", false)) {
+                pyodide = it.optString("pyodide")
+            }
+        }
+
+        Log.i(TAG, "target($version) = cp${python[0]}${python[1]} / " +
+            "${info.optString("abi_version")} / ${info.optString("platform")} / $pyodide")
+        return Target(
+            runtime = version,
+            cp = "cp${python[0]}${python[1]}",
+            abi = info.optString("abi_version"),
+            platform = info.optString("platform"),
+            pyodide = pyodide,
+            lock = lock,
+        )
+    }
+
+    /**
+     * Wheels used to sit in one flat directory, from when there was only ever
+     * one interpreter to build them for. They were all built for the bundle's
+     * own ABI, so that is where they belong now.
+     */
+    fun migrate() {
+        val entries = list()
+        var moved = 0
+        val bundled = targetFor("") ?: return
+        val abi = bundled.abi
+        if (abi.isEmpty()) return
+        for (i in 0 until entries.length()) {
+            val entry = entries.getJSONObject(i)
+            if (entry.optString("abi").isNotEmpty()) {
+                // Moved by an earlier run, before the interpreter was recorded.
+                if (entry.optString("python").isEmpty() && entry.optString("abi") == abi) {
+                    entry.put("python", bundled.cp)
+                    moved++
+                }
+                continue
+            }
+            entry.put("abi", abi).put("python", bundled.cp)
+            for (name in (entry.optJSONArray("files") ?: JSONArray()).strings()) {
+                val old = File(dir, name)
+                if (!old.isFile) continue
+                val into = File(dir, abi).apply { mkdirs() }
+                if (old.renameTo(File(into, name))) moved++
+            }
+        }
+        if (moved > 0) {
+            index.writeText(entries.toString())
+            Log.i(TAG, "既存の wheel $moved 件を abi $abi に揃えました")
+        }
+    }
+
+    private fun lockFor(version: String): JSONObject? = try {
+        val text = if (version.isEmpty()) {
+            runtime.open("pyodide/pyodide-lock.json").reader().use { it.readText() }
+        } else {
+            // Falls through to the bundle's own when the version shares it.
+            runtime.openAlternate(version, "pyodide/pyodide-lock.json")
+                ?.first?.reader()?.use { it.readText() }
+        }
+        text?.let { JSONObject(it) }
+    } catch (e: Exception) {
+        Log.w(TAG, "pyodide-lock.json を読めません ($version)", e); null
+    }
+
     companion object {
         private const val TAG = "pwf.pypkg"
         private const val PYODIDE_CDN = "https://cdn.jsdelivr.net/pyodide"
@@ -34,6 +130,34 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
 
         /** Imported everywhere and provided by the runtime itself. */
         private val PROVIDED = setOf("pyxel", "js", "pyodide", "micropip", "__future__")
+
+        /**
+         * Standard library modules compiled into the interpreter.
+         *
+         * python_stdlib.zip holds only what ships as .py files, so `import math`
+         * looks like a missing package to a reader of the source — and PyPI has
+         * an unrelated project called `math`. Fetching that would be worse than
+         * useless, so these names are excluded by name.
+         *
+         * Derived from `sys.stdlib_module_names` minus the archive's entries;
+         * a few are for platforms this interpreter does not have, which costs
+         * nothing since none of them may ever be downloaded.
+         */
+        private val BUILTIN = (
+            "_abc _aix_support _ast _asyncio _bisect _blake2 _bz2 _codecs _codecs_cn " +
+            "_codecs_hk _codecs_iso2022 _codecs_jp _codecs_kr _codecs_tw _collections " +
+            "_contextvars _crypt _csv _ctypes _curses _curses_panel _datetime _dbm " +
+            "_decimal _elementtree _functools _gdbm _hashlib _heapq _imp _io _json " +
+            "_locale _lsprof _lzma _md5 _msi _multibytecodec _multiprocessing _opcode " +
+            "_operator _overlapped _pickle _posixshmem _posixsubprocess _queue _random " +
+            "_scproxy _sha1 _sha2 _sha3 _signal _socket _sqlite3 _sre _stat _statistics " +
+            "_string _struct _symtable _thread _tkinter _tokenize _tracemalloc _typing " +
+            "_uuid _warnings _weakref _winapi _zoneinfo array atexit audioop binascii " +
+            "builtins cmath crypt curses dbm errno faulthandler fcntl gc grp itertools " +
+            "marshal math mmap msvcrt nis nt ossaudiodev posix pwd pyexpat readline " +
+            "resource select spwd sys syslog termios time tkinter unicodedata winreg " +
+            "winsound zlib "
+            ).trim().split(" ").toSet()
     }
 
     // ---- what is installed -------------------------------------------------
@@ -44,44 +168,56 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
         Log.e(TAG, "索引を読めません", e); JSONArray()
     }
 
-    fun has(name: String): Boolean = entry(name) != null
+    fun has(name: String, abi: String): Boolean = entry(name, abi) != null
 
-    private fun entry(name: String): JSONObject? {
+    private fun entry(name: String, abi: String): JSONObject? {
         val entries = list()
         for (i in 0 until entries.length()) {
             val it = entries.getJSONObject(i)
-            if (it.getString("name").equals(name, ignoreCase = true)) return it
+            if (it.getString("name").equals(name, ignoreCase = true) &&
+                it.optString("abi") == abi
+            ) return it
         }
         return null
     }
 
-    /** A wheel by file name, for serving. Nothing outside this directory. */
-    fun open(fileName: String): Pair<InputStream, Long>? {
-        require(!fileName.contains("/") && !fileName.contains("..")) { "不正な名前" }
-        val file = File(dir, fileName)
+    /** A wheel, for serving: `<abi>/<file>`. Nothing outside this directory. */
+    fun open(path: String): Pair<InputStream, Long>? {
+        require(!path.contains("..")) { "不正な名前" }
+        val parts = path.split("/")
+        require(parts.size == 2) { "不正な名前" }
+        val file = File(File(dir, parts[0]), parts[1])
         if (!file.isFile) return null
         return file.inputStream() to file.length()
     }
 
-    /** The wheels a set of packages needs, as paths the page can fetch. */
-    fun urlsFor(names: List<String>): List<String> {
+    /**
+     * The wheels a set of packages needs, for one interpreter.
+     *
+     * Only what was built for that ABI is offered. A game whose Pyxel version
+     * changed simply finds nothing here, and the scan asks for it again — the
+     * wheels it had cannot load on the interpreter it now runs on.
+     */
+    fun urlsFor(names: List<String>, abi: String): List<String> {
         val out = LinkedHashSet<String>()
         for (name in names) {
-            val found = entry(name) ?: continue
+            val found = entry(name, abi) ?: continue
             for (dep in (found.optJSONArray("files") ?: JSONArray()).strings()) {
-                out.add("/pypkg/$dep")
+                out.add("/pypkg/$abi/$dep")
             }
         }
         return out.toList()
     }
 
-    fun remove(name: String) {
+    fun remove(name: String, abi: String) {
         val entries = list()
         val kept = JSONArray()
         var dropped: JSONObject? = null
         for (i in 0 until entries.length()) {
             val it = entries.getJSONObject(i)
-            if (it.getString("name").equals(name, ignoreCase = true)) dropped = it else kept.put(it)
+            if (it.getString("name").equals(name, ignoreCase = true) &&
+                it.optString("abi") == abi
+            ) dropped = it else kept.put(it)
         }
         index.writeText(kept.toString())
 
@@ -89,10 +225,11 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
         // names is deleted.
         val stillUsed = mutableSetOf<String>()
         for (i in 0 until kept.length()) {
+            if (kept.getJSONObject(i).optString("abi") != abi) continue
             stillUsed += (kept.getJSONObject(i).optJSONArray("files") ?: JSONArray()).strings()
         }
         for (f in (dropped?.optJSONArray("files") ?: JSONArray()).strings()) {
-            if (f !in stillUsed) File(dir, f).delete()
+            if (f !in stillUsed) File(File(dir, abi), f).delete()
         }
     }
 
@@ -104,7 +241,7 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
      * Reading the source is the only way to know before running it, and running
      * it is what fails. Nothing here is executed: the imports are read as text.
      */
-    fun missingFor(appFile: File): List<String> {
+    fun missingFor(appFile: File, target: Target): List<String> {
         val imported = LinkedHashSet<String>()
         val own = mutableSetOf<String>()
         ZipFile(appFile).use { zip ->
@@ -125,9 +262,10 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
                 }
             }
         }
-        val stdlib = stdlibNames()
+        val stdlib = stdlibNames(target)
         return imported.filter {
-            it.isNotEmpty() && it !in own && it !in stdlib && it !in PROVIDED && !has(it)
+            it.isNotEmpty() && it !in own && it !in stdlib && it !in BUILTIN &&
+                it !in PROVIDED && !has(it, target.abi)
         }
     }
 
@@ -137,11 +275,11 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
             Regex("""^\s*(?:from|import)\s+([A-Za-z_][\w.]*)""")
         }
 
-    /** Read out of the runtime's own stdlib archive rather than hardcoded. */
-    private fun stdlibNames(): Set<String> {
+    /** Read out of that interpreter's own stdlib archive rather than hardcoded. */
+    private fun stdlibNames(target: Target): Set<String> {
         val names = mutableSetOf<String>()
         try {
-            ZipInputStream(runtime.open("pyodide/python_stdlib.zip").buffered()).use { zip ->
+            ZipInputStream(stdlib(target).buffered()).use { zip ->
                 var e = zip.nextEntry
                 while (e != null) {
                     val top = e.name.trimStart('/').substringBefore("/")
@@ -155,16 +293,22 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
         return names
     }
 
+    private fun stdlib(target: Target): InputStream {
+        val rel = "pyodide/python_stdlib.zip"
+        if (target.runtime.isEmpty()) return runtime.open(rel)
+        return runtime.openAlternate(target.runtime, rel)?.first ?: runtime.open(rel)
+    }
+
     // ---- getting one -------------------------------------------------------
 
     /**
      * Fetches a package and everything it needs.
      *
      * Two places are asked, in order: the Pyodide distribution that matches the
-     * bundled interpreter, then PyPI for a wheel built against the same ABI.
+     * game's interpreter, then PyPI for a wheel built against the same ABI.
      * Anything else cannot load, so it is not offered.
      */
-    fun install(name: String, onProgress: (String, Int) -> Unit): JSONObject {
+    fun install(name: String, target: Target, onProgress: (String, Int) -> Unit): JSONObject {
         val wanted = ArrayDeque(listOf(name))
         val seen = mutableSetOf<String>()
         val files = JSONArray()
@@ -174,10 +318,10 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
             val current = wanted.removeFirst()
             val key = current.lowercase()
             if (!seen.add(key)) continue
-            if (key != name.lowercase() && has(current)) continue   // already here
+            if (key != name.lowercase() && has(current, target.abi)) continue   // already here
 
             onProgress(current, files.length())
-            val got = fetchOne(current)
+            val got = fetchOne(current, target)
                 ?: throw IllegalArgumentException("$current に合う wheel が見つかりません")
             files.put(got.file)
             if (key == name.lowercase()) version = got.version
@@ -187,37 +331,41 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
         val entry = JSONObject()
             .put("name", name)
             .put("version", version)
+            .put("abi", target.abi)
+            .put("python", target.cp)
             .put("files", files)
             .put("installedAt", System.currentTimeMillis())
 
+        // Only the same package for the same ABI is superseded: the cp313 build
+        // and the cp314 build of one package are two installs, not one.
         val entries = list()
         val kept = JSONArray().put(entry)
         for (i in 0 until entries.length()) {
             val it = entries.getJSONObject(i)
-            if (!it.getString("name").equals(name, ignoreCase = true)) kept.put(it)
+            if (!it.getString("name").equals(name, ignoreCase = true) ||
+                it.optString("abi") != target.abi
+            ) kept.put(it)
         }
         index.writeText(kept.toString())
-        Log.i(TAG, "$name $version を導入 (${files.length()} wheel)")
+        Log.i(TAG, "$name $version を導入 (${files.length()} wheel, abi ${target.abi})")
         return entry
     }
 
     private data class Fetched(val file: String, val version: String, val depends: List<String>)
 
-    private fun fetchOne(name: String): Fetched? {
-        fromPyodide(name)?.let { return it }
-        return fromPypi(name)
+    private fun fetchOne(name: String, target: Target): Fetched? {
+        fromPyodide(name, target)?.let { return it }
+        return fromPypi(name, target)
     }
 
     /** The distribution that shipped with this interpreter, so it always fits. */
-    private fun fromPyodide(name: String): Fetched? {
-        val lock = lock() ?: return null
-        val packages = lock.optJSONObject("packages") ?: return null
+    private fun fromPyodide(name: String, target: Target): Fetched? {
+        val packages = target.lock.optJSONObject("packages") ?: return null
         val key = packages.keys().asSequence().firstOrNull { it.equals(name, ignoreCase = true) }
             ?: return null
         val info = packages.getJSONObject(key)
         val fileName = info.getString("file_name")
-        val pyodide = runtime.manifest().optString("pyodide")
-        download("$PYODIDE_CDN/v$pyodide/full/$fileName", fileName)
+        download("$PYODIDE_CDN/v${target.pyodide}/full/$fileName", fileName, target.abi)
         val depends = (info.optJSONArray("depends") ?: JSONArray()).let { array ->
             (0 until array.length()).map { array.getString(it) }
         }
@@ -225,7 +373,7 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
     }
 
     /** Anything else, if it publishes a wheel this interpreter can load. */
-    private fun fromPypi(name: String): Fetched? {
+    private fun fromPypi(name: String, target: Target): Fetched? {
         val body = try {
             JSONObject(Net.getText("$PYPI/${Uri.encode(name)}/json"))
         } catch (e: Exception) {
@@ -239,37 +387,20 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
             for (i in 0 until files.length()) {
                 val file = files.getJSONObject(i)
                 val fileName = file.optString("filename")
-                if (!accepts(fileName)) continue
-                download(file.getString("url"), fileName)
-                return Fetched(fileName, version, requiresOf(File(dir, fileName)))
+                if (!accepts(fileName, target)) continue
+                download(file.getString("url"), fileName, target.abi)
+                return Fetched(fileName, version, requiresOf(File(File(dir, target.abi), fileName)))
             }
         }
         return null
     }
 
     /** Only a wheel this interpreter can actually load is worth downloading. */
-    private fun accepts(fileName: String): Boolean {
+    private fun accepts(fileName: String, target: Target): Boolean {
         if (!fileName.endsWith(".whl")) return false
         if (fileName.endsWith("-py3-none-any.whl")) return true
-        val platform = runtime.manifest().optString("platform")   // emscripten_5_0_3
-        val abi = runtime.manifest().optString("abi")             // 2026_0
-        val cp = cpTag() ?: return false
-        return fileName.endsWith("-$cp-$cp-pyemscripten_${abi}_wasm32.whl") ||
-            fileName.endsWith("-$cp-abi3-${platform}_wasm32.whl")
-    }
-
-    /** cp314 and the like, taken from the interpreter rather than assumed. */
-    private fun cpTag(): String? {
-        val python = lock()?.optJSONObject("info")?.optString("python") ?: return null
-        val parts = python.split(".")
-        if (parts.size < 2) return null
-        return "cp${parts[0]}${parts[1]}"
-    }
-
-    private fun lock(): JSONObject? = try {
-        JSONObject(runtime.open("pyodide/pyodide-lock.json").reader().use { it.readText() })
-    } catch (e: Exception) {
-        Log.w(TAG, "pyodide-lock.json を読めません", e); null
+        return fileName.endsWith("-${target.cp}-${target.cp}-pyemscripten_${target.abi}_wasm32.whl") ||
+            fileName.endsWith("-${target.cp}-abi3-${target.platform}_wasm32.whl")
     }
 
     /** What a wheel says it needs, ignoring anything behind an extra. */
@@ -293,10 +424,11 @@ class PyPackages(private val ctx: Context, private val runtime: RuntimeStore) {
         return out
     }
 
-    private fun download(url: String, fileName: String) {
-        val target = File(dir, fileName)
+    private fun download(url: String, fileName: String, abi: String) {
+        val into = File(dir, abi).apply { mkdirs() }
+        val target = File(into, fileName)
         if (target.isFile && target.length() > 0) return       // already fetched
-        val staging = File(dir, "$fileName.part")
+        val staging = File(into, "$fileName.part")
         Net.download(url, staging)
         staging.renameTo(target)
     }

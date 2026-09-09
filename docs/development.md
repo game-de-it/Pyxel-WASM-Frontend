@@ -506,21 +506,25 @@ text — running it is exactly what fails — and strikes out the game's own
 modules, the names in `python_stdlib.zip`, and what is already installed. That
 still over-reports: `math`, `time` and the rest are compiled into the
 interpreter and appear in no file, and PyPI has an unrelated package called
-`math` that would then be offered for download. So the remaining candidates go
-to the live interpreter, which answers with `importlib.util.find_spec`.
+`math` that would then be offered for download. Those names are held in
+`BUILTIN`, derived from `sys.stdlib_module_names` minus the archive's entries.
+When the game is running, the remaining candidates also go to its live
+interpreter, which answers with `importlib.util.find_spec` — but only that
+game's own player is asked, since a warm player pinned to another Pyxel is a
+different Python and its answer would be about something else.
 
 Wheels are fetched **natively** and served from `/pypkg/`, the same rule the
 runtime layers follow: a WebView holding a JavascriptInterface never loads an
 outside URL. Two sources are tried, in order:
 
-1. **The Pyodide distribution** that matches the bundled interpreter, resolved
-   through the `packages` table in `pyodide-lock.json`. Its `depends` field
-   gives real dependency resolution for free — asking for pymunk is what brings
-   in cffi, and cffi is what brings in pycparser.
-2. **PyPI**, for a wheel tagged for this ABI (`cp314-cp314-pyemscripten_2026_0_wasm32`)
-   or pure Python. The tag is built from the interpreter's own version and the
-   bundle's ABI rather than hardcoded. Dependencies come from the wheel's
-   `METADATA`, ignoring anything behind an extra.
+1. **The Pyodide distribution** that matches the interpreter, resolved through
+   the `packages` table in that version's `pyodide-lock.json`. Its `depends`
+   field gives real dependency resolution for free — asking for pymunk is what
+   brings in cffi, and cffi is what brings in pycparser.
+2. **PyPI**, for a wheel tagged for that ABI (`cp314-cp314-pyemscripten_2026_0_wasm32`)
+   or pure Python. The tag is built from the interpreter's own version and ABI
+   rather than hardcoded. Dependencies come from the wheel's `METADATA`,
+   ignoring anything behind an extra.
 
 Loading is `pyodide.loadPackage()` with local URLs, done in `pwfPrepareFiles`
 before the app runs. **Not a hand-rolled unpack**: unpacking a wheel into
@@ -531,9 +535,19 @@ and then the import fails because nothing told the dynamic loader about it.
 Which packages a game loads is per app, not global: loading everything on every
 launch would slow every game for the sake of one.
 
-What this does not do yet: wheels are chosen for the **default** runtime's ABI.
-A game pinned to an older Pyxel runs on a different Pyodide, and the wheels
-fetched for the default one will not load there.
+**Everything above is asked of a game's own runtime, not of "the" runtime.**
+`PyPackages.Target` carries one interpreter's `cp` tag, ABI, platform and
+Pyodide version, read from that version's `pyodide-lock.json` — the layer's own
+when it brought one, the bundle's when a same-ABI layer shares it. The store is
+keyed by ABI (`filesDir/pypkg/<abi>/…`, served as `/pypkg/<abi>/<wheel>`), so
+the cp313 and cp314 builds of one package are two installs that neither
+overwrite nor delete each other. `urlsFor()` only offers what matches, which is
+what makes a version change safe: the names stay, the wheels are simply absent,
+the settings panel says so, and a rescan fetches the right ones.
+
+Entries written before this — a flat directory, no ABI recorded — are migrated
+on startup into the bundle's ABI, which is the only one they can have been
+built for.
 
 ## When a game stops
 

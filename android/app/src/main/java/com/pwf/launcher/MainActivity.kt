@@ -61,7 +61,7 @@ class MainActivity : Activity() {
         runtime = RuntimeStore(this)
         library = AppLibrary(this)
         library.migrateRuntimePins()
-        packages = PyPackages(this, runtime)
+        packages = PyPackages(this, runtime).apply { migrate() }
         // Decide the fate of an unconfirmed bundle before anything loads it.
         runtime.beforeLoad()
 

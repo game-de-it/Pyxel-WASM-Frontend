@@ -144,9 +144,16 @@ class HostBridge(private val activity: MainActivity) {
     /** The wheels one app needs, as paths the player can hand to Pyodide. */
     @JavascriptInterface
     fun packageUrls(id: String): String {
-        val names = entryOf(id)?.optString("packages").orEmpty()
-            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        return JSONArray(activity.packages.urlsFor(names)).toString()
+        val names = namesFor(id)
+        val target = targetOf(id) ?: return "[]"
+        return JSONArray(activity.packages.urlsFor(names, target.abi)).toString()
+    }
+
+    /** Which interpreter this app's wheels have to be built for. */
+    @JavascriptInterface
+    fun packageTarget(id: String): String {
+        val target = targetOf(id) ?: return "{}"
+        return JSONObject().put("abi", target.abi).put("python", target.cp).toString()
     }
 
     /**
@@ -157,21 +164,22 @@ class HostBridge(private val activity: MainActivity) {
      */
     @JavascriptInterface
     fun missingPackages(id: String) = background("missingPackages") {
-        val missing = activity.packages.missingFor(activity.library.file(id))
+        val target = targetOf(id) ?: throw IllegalStateException("実行環境を特定できません")
+        val missing = activity.packages.missingFor(activity.library.file(id), target)
         activity.emit("packages-scanned", JSONObject()
-            .put("id", id).put("missing", JSONArray(missing)))
+            .put("id", id).put("missing", JSONArray(missing)).put("abi", target.abi))
     }
 
     @JavascriptInterface
     fun installPackage(id: String, name: String) = background("installPackage") {
-        val entry = activity.packages.install(name) { current, done ->
+        val target = targetOf(id) ?: throw IllegalStateException("実行環境を特定できません")
+        val entry = activity.packages.install(name, target) { current, done ->
             activity.emit("package-progress", JSONObject()
                 .put("name", current).put("done", done))
         }
         // Fetching it for a game is also choosing it for that game.
         if (id.isNotEmpty()) {
-            val names = entryOf(id)?.optString("packages").orEmpty()
-                .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+            val names = namesFor(id).toMutableSet()
             names += name
             activity.library.setPackages(id, names.joinToString(","))
         }
@@ -179,8 +187,8 @@ class HostBridge(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
-    fun removePackage(name: String) = background("removePackage") {
-        activity.packages.remove(name)
+    fun removePackage(name: String, abi: String) = background("removePackage") {
+        activity.packages.remove(name, abi)
         activity.emit("package-installed", JSONObject().put("name", name).put("removed", true))
     }
 
@@ -189,6 +197,20 @@ class HostBridge(private val activity: MainActivity) {
         activity.library.setPackages(id, names)
         activity.emit("library-changed", JSONObject().put("id", id))
     }
+
+    private fun namesFor(id: String): List<String> =
+        entryOf(id)?.optString("packages").orEmpty()
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
+    /**
+     * The interpreter one app runs on.
+     *
+     * A game pinned to an older Pyxel gets an older Python and a different ABI,
+     * and a wheel built for one will not load in the other — so which wheels it
+     * needs, and which it already has, are both questions about *its* runtime.
+     */
+    private fun targetOf(id: String): PyPackages.Target? =
+        activity.packages.targetFor(entryOf(id)?.optString("runtime").orEmpty())
 
     private fun entryOf(id: String): JSONObject? {
         val entries = activity.library.list()

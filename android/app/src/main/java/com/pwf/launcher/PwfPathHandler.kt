@@ -15,7 +15,7 @@ import java.io.InputStream
  *  - `/runtime/<n>/…`     the active runtime bundle (downloaded or baseline)
  *  - `/apps/<id>.pyxapp`  a Pyxel app the native side already fetched
  *  - `/appshot/<id>.png`  a frame from the last time that app ran
- *  - `/pypkg/<wheel>`     a Python package a game imports
+ *  - `/pypkg/<abi>/<wheel>` a Python package a game imports, per interpreter
  *  - `/appdata/<id>/…`    the data folder that shipped alongside such an app
  *  - `/appsave/<id>/…`    what that app wrote the last time it ran
  *

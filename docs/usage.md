@@ -125,16 +125,18 @@ fetch each one. Fetching also switches it on for that game.
 A game that has already stopped this way is quicker still: the error panel that
 appears has the same button on it.
 
-Only wheels built for this runtime can be used, and they come from the Pyodide
-distribution or from PyPI. Something with no such build cannot be installed —
-there is no way around that from here.
+Only wheels built for the interpreter can be used, and they come from the
+Pyodide distribution or from PyPI. Something with no such build cannot be
+installed — there is no way around that from here.
 
-Packages are fetched for the **default** Pyxel version. A game pinned to a
-different one may need different wheels; set it back to 既定 if a package does
-not take effect.
+Packages follow the game's **Pyxel version**. An older Pyxel runs on an older
+Python, and a wheel built for one will not load in the other, so each version
+gets its own copy: the panel says which Pyxel a game's packages are for, and
+tells you when a package it names has no build for the version currently
+selected. Scanning again fetches the right one.
 
-Everything downloaded is listed in the runtime settings, where it can be removed
-again.
+Everything downloaded is listed in the runtime settings, tagged with the Python
+it was built for (`[cp314]`), where it can be removed again.
 
 ### Choosing a Pyxel version
 
