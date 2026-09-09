@@ -112,6 +112,30 @@ being per-game, so **any** export is a full backup of it — and restoring one
 puts every game's stored progress back, not just this game's. Worth knowing
 before restoring an old archive over newer progress somewhere else.
 
+### Python packages
+
+Some games import something the runtime does not carry — a physics library, an
+image library. The game stops on that import, and there is nothing it can do
+about it from inside.
+
+⚙ → **Python パッケージ** → **不足しているモジュールを調べる** reads the game's
+source, asks the interpreter which of its imports it cannot find, and offers to
+fetch each one. Fetching also switches it on for that game.
+
+A game that has already stopped this way is quicker still: the error panel that
+appears has the same button on it.
+
+Only wheels built for this runtime can be used, and they come from the Pyodide
+distribution or from PyPI. Something with no such build cannot be installed —
+there is no way around that from here.
+
+Packages are fetched for the **default** Pyxel version. A game pinned to a
+different one may need different wheels; set it back to 既定 if a package does
+not take effect.
+
+Everything downloaded is listed in the runtime settings, where it can be removed
+again.
+
 ### Choosing a Pyxel version
 
 Every game runs on the Pyxel that ships with pwf unless you say otherwise. If a
@@ -164,7 +188,9 @@ A runtime that fails to start is rolled back automatically on the next launch.
 
 ## When something is wrong
 
-**A game will not start.** Some games are built for a particular web page and
+**A game will not start.** A panel now shows what went wrong at a size you can
+read. If it says `ModuleNotFoundError`, use the button on it to look for the
+missing package. Otherwise: some games are built for a particular web page and
 expect it to provide things pwf does not. Most of those are handled, but if a
 game fails immediately it is worth reporting with the game's name.
 

@@ -284,6 +284,13 @@
   }
   .modal-box .actions { display: flex; gap: 8px; }
 
+  #error-sheet { z-index: 80; }
+  /* px, not vh: the page is zoomed to match device pixels, and a viewport
+     unit ignores that and grows past the screen. */
+  #error-detail { white-space: pre-wrap; font-size: 12px; max-height: 210px; overflow: auto; }
+  /* The message is an identifier; shouting it makes it harder to read. */
+  #error-message { text-transform: none; font-family: ui-monospace, monospace; }
+
   #stage {
     position: fixed;
     inset: 0;
@@ -376,6 +383,12 @@
   </div>
 
   <div class="row">
+    <div class="label">Python パッケージ</div>
+    <div class="log" id="game-packages-note">なし</div>
+    <div class="actions" id="game-packages"></div>
+  </div>
+
+  <div class="row">
     <div class="label">Pyxel バージョン</div>
     <div class="log" id="game-runtime-note">既定</div>
     <div class="actions">
@@ -408,10 +421,30 @@
   </div>
 </div>
 
+<div class="sheet" id="error-sheet">
+  <h1>ゲームが停止しました</h1>
+  <div class="row">
+    <div class="label" id="error-message">エラー</div>
+    <div class="log" id="error-detail"></div>
+  </div>
+  <div class="row">
+    <div class="actions">
+      <button class="btn" id="error-scan" type="button">不足しているモジュールを調べる</button>
+      <button class="btn ghost" id="error-close" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div class="sheet" id="settings">
   <h1>ランタイム</h1>
 
   <dl class="facts" id="runtime-facts"></dl>
+
+  <div class="row">
+    <div class="label">導入済み Python パッケージ</div>
+    <div class="log">ゲームが import するもののうち、ランタイムに無いものです</div>
+    <div class="actions" id="package-list"></div>
+  </div>
 
   <div class="row">
     <div class="label">導入済みランタイム</div>
@@ -681,6 +714,7 @@
       }
     };
 
+    renderGamePackages(entry);
     renderRuntimePicker(entry);
 
     choices($("game-pad"), PAD_MODES, entry.pad || "auto",
@@ -743,6 +777,96 @@
 
   // Every Pyxel on the device: the bundle's own and its layers cannot be
   // removed (they are inside the APK); anything fetched since can be.
+  let packageState = [];
+  let scanned = { id: null, missing: [] };
+
+  const readPackages = () => {
+    try {
+      packageState = JSON.parse(host.packages());
+    } catch (err) {
+      packageState = [];
+    }
+  };
+
+  // Everything on the device, with a way to reclaim the space.
+  function renderPackageList() {
+    const row = $("package-list");
+    if (!row) return;
+    row.innerHTML = "";
+    if (!packageState.length) {
+      const none = document.createElement("div");
+      none.className = "log";
+      none.textContent = "まだありません";
+      row.appendChild(none);
+      return;
+    }
+    for (const pkg of packageState) {
+      const button = document.createElement("button");
+      button.className = "btn";
+      button.type = "button";
+      let armed = false;
+      const label = () => `${pkg.name} ${pkg.version || ""} を削除`.trim();
+      button.textContent = label();
+      button.onclick = () => {
+        if (!armed) {
+          armed = true;
+          button.textContent = "もう一度押すと削除";
+          setTimeout(() => {
+            armed = false;
+            button.textContent = label();
+          }, 4000);
+          return;
+        }
+        host.removePackage(pkg.name);
+      };
+      row.appendChild(button);
+    }
+  }
+
+  // What this game loads, and what it looks like it still needs.
+  function renderGamePackages(entry) {
+    const note = $("game-packages-note");
+    const row = $("game-packages");
+    if (!note || !row) return;
+    const chosen = (entry.packages || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const missing = scanned.id === entry.id ? scanned.missing : [];
+
+    note.textContent = chosen.length
+      ? `読み込む: ${chosen.join(", ")}`
+      : "なし — ゲームが pymunk などを import するなら、下から調べて取得してください";
+
+    row.innerHTML = "";
+    const scan = document.createElement("button");
+    scan.className = "btn";
+    scan.type = "button";
+    scan.textContent = "不足しているモジュールを調べる";
+    scan.onclick = () => host.missingPackages(entry.id);
+    row.appendChild(scan);
+
+    for (const name of missing) {
+      const get = document.createElement("button");
+      get.className = "btn primary";
+      get.type = "button";
+      get.textContent = `${name} を取得`;
+      get.onclick = () => {
+        get.disabled = true;
+        get.textContent = `${name} を取得中…`;
+        host.installPackage(entry.id, name);
+      };
+      row.appendChild(get);
+    }
+
+    for (const name of chosen) {
+      const drop = document.createElement("button");
+      drop.className = "btn ghost";
+      drop.type = "button";
+      drop.textContent = `${name} を外す`;
+      drop.onclick = () =>
+        host.setPackages(entry.id, chosen.filter((n) => n !== name).join(","));
+      row.appendChild(drop);
+    }
+  }
+
   function renderRuntimeList() {
     const row = $("runtime-list");
     if (!row) return;
@@ -801,6 +925,15 @@
   $("game-clear-shot").onclick = () => sheetId && host.clearShot(sheetId);
   $("game-export-save").onclick = () => sheetId && host.exportSave(sheetId, webStorage());
   $("game-import-save").onclick = () => sheetId && host.importSave(sheetId);
+
+  $("error-close").onclick = () => $("error-sheet").classList.remove("on");
+  $("error-scan").onclick = () => {
+    if (!playingId) return;
+    $("error-sheet").classList.remove("on");
+    closePlayer();
+    openGameSheet(playingId);
+    host.missingPackages(playingId);
+  };
 
   $("layout-toggle").onclick = () => {
     layout = layout === "tiles" ? "list" : "tiles";
@@ -894,7 +1027,11 @@
     shotTimer = null;
   };
 
+  // Which app is on screen, so a failure can be traced back to it.
+  let playingId = null;
+
   async function play(entry) {
+    playingId = entry.id;
     // A page holds one interpreter, so a game pinned to another Pyxel means
     // starting the frame over -- a cold boot rather than the usual warm swap.
     const layer = entry.runtime || "";
@@ -930,6 +1067,15 @@
       hasData: !!entry.data,
       rev: entry.rev || 0,
       audio: entry.audio || "pyxel",
+      // Resolved here rather than in the player: only the native side knows
+      // which wheels are actually on the device.
+      packages: (() => {
+        try {
+          return JSON.parse(host.packageUrls(entry.id));
+        } catch (err) {
+          return [];
+        }
+      })(),
       pad: entry.pad || "auto",
       prefer: entry.resume || "continue",
     };
@@ -966,7 +1112,7 @@
   const NAV_REPEAT = 120;
 
   const navLayer = () => {
-    for (const id of ["url-modal", "game-sheet", "settings"]) {
+    for (const id of ["error-sheet", "url-modal", "game-sheet", "settings"]) {
       if ($(id).classList.contains("on")) return $(id);
     }
     return document.body;
@@ -1137,7 +1283,7 @@
   requestAnimationFrame(pollPad);
 
   window.pwfBack = () => {
-    for (const id of ["url-modal", "game-sheet", "settings"]) {
+    for (const id of ["error-sheet", "url-modal", "game-sheet", "settings"]) {
       if ($(id).classList.contains("on")) {
         $(id).classList.remove("on");
         if (id === "game-sheet") sheetId = null;
@@ -1154,6 +1300,24 @@
   window.addEventListener("message", (e) => {
     if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow) return;
     const msg = e.data || {};
+
+    if (msg.type === "probed") {
+      scanned = { id: msg.id, missing: msg.missing || [] };
+      renderGameSheet();
+      toast(scanned.missing.length
+        ? `不足: ${scanned.missing.join(", ")}`
+        : "不足しているモジュールはありません");
+      return;
+    }
+
+    if (msg.type === "player-error") {
+      // The player paints this in four-pixel text; show it at a size that can
+      // be read, and offer the thing that usually fixes it.
+      $("error-message").textContent = msg.message || "エラー";
+      $("error-detail").textContent = msg.detail || "";
+      $("error-sheet").classList.add("on");
+      return;
+    }
 
     if (msg.type === "player-ready") {
       playerReady = true;
@@ -1209,6 +1373,8 @@
     chip.textContent = `bundle ${runtimeState.bundle} · pyxel ${runtimeState.pyxel}`;
     chip.classList.toggle("warn", runtimeState.unconfirmed);
 
+    readPackages();
+    renderPackageList();
     renderRuntimeList();
     const facts = $("runtime-facts");
     facts.innerHTML = "";
@@ -1274,6 +1440,29 @@
         toast(`セーブを ${payload.files} ファイル読み込みました` + (keys ? `（設定 ${keys} 件）` : ""));
         break;
       }
+      case "packages-scanned":
+        // The native side reads the imports out of the source; the interpreter
+        // is the only thing that knows which of them it already has.
+        if (playerReady && payload.missing?.length) {
+          tellPlayer({ type: "probe", id: payload.id, names: payload.missing });
+        } else {
+          scanned = { id: payload.id, missing: payload.missing || [] };
+          renderGameSheet();
+          toast("不足しているモジュールはありません");
+        }
+        break;
+      case "package-progress":
+        toast(`${payload.name} を取得しています…`);
+        break;
+      case "package-installed":
+        readPackages();
+        renderPackageList();
+        scanned = { id: null, missing: [] };
+        renderGameSheet();
+        toast(payload.removed
+          ? `${payload.name} を削除しました`
+          : `${payload.name} ${payload.version || ""} を追加しました`);
+        break;
       case "runtime-progress":
         if ($("game-runtime-progress")) {
           $("game-runtime-progress").hidden = false;

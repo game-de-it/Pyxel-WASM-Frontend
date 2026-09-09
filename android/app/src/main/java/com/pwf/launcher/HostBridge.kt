@@ -3,6 +3,7 @@ package com.pwf.launcher
 import android.util.Log
 import android.webkit.JavascriptInterface
 import java.util.concurrent.Executors
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -132,6 +133,70 @@ class HostBridge(private val activity: MainActivity) {
     fun setAudioMode(id: String, mode: String) = background("setAudioMode") {
         activity.library.setAudioMode(id, mode)
         activity.emit("library-changed", JSONObject().put("id", id))
+    }
+
+    // ---- Python packages ---------------------------------------------------
+
+    /** What is installed, for the settings list. */
+    @JavascriptInterface
+    fun packages(): String = activity.packages.list().toString()
+
+    /** The wheels one app needs, as paths the player can hand to Pyodide. */
+    @JavascriptInterface
+    fun packageUrls(id: String): String {
+        val names = entryOf(id)?.optString("packages").orEmpty()
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        return JSONArray(activity.packages.urlsFor(names)).toString()
+    }
+
+    /**
+     * The modules this app imports that the runtime cannot provide.
+     *
+     * Read from the source rather than found by running it, because running it
+     * is exactly what fails.
+     */
+    @JavascriptInterface
+    fun missingPackages(id: String) = background("missingPackages") {
+        val missing = activity.packages.missingFor(activity.library.file(id))
+        activity.emit("packages-scanned", JSONObject()
+            .put("id", id).put("missing", JSONArray(missing)))
+    }
+
+    @JavascriptInterface
+    fun installPackage(id: String, name: String) = background("installPackage") {
+        val entry = activity.packages.install(name) { current, done ->
+            activity.emit("package-progress", JSONObject()
+                .put("name", current).put("done", done))
+        }
+        // Fetching it for a game is also choosing it for that game.
+        if (id.isNotEmpty()) {
+            val names = entryOf(id)?.optString("packages").orEmpty()
+                .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+            names += name
+            activity.library.setPackages(id, names.joinToString(","))
+        }
+        activity.emit("package-installed", entry.put("id", id))
+    }
+
+    @JavascriptInterface
+    fun removePackage(name: String) = background("removePackage") {
+        activity.packages.remove(name)
+        activity.emit("package-installed", JSONObject().put("name", name).put("removed", true))
+    }
+
+    @JavascriptInterface
+    fun setPackages(id: String, names: String) = background("setPackages") {
+        activity.library.setPackages(id, names)
+        activity.emit("library-changed", JSONObject().put("id", id))
+    }
+
+    private fun entryOf(id: String): JSONObject? {
+        val entries = activity.library.list()
+        for (i in 0 until entries.length()) {
+            val entry = entries.getJSONObject(i)
+            if (entry.getString("id") == id) return entry
+        }
+        return null
     }
 
     @JavascriptInterface

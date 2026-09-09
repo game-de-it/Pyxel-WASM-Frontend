@@ -18,6 +18,33 @@
     : "pyxel";
   const tell = (msg) => parent.postMessage(msg, location.origin);
 
+  // A game that dies prints its traceback to the console and paints it on the
+  // canvas in four-pixel text, which on a handheld cannot be read at all. Keep
+  // the tail of the output and hand the shell something legible.
+  const recent = [];
+  const FAILED = /^\s*(?:[A-Za-z_][\w.]*\.)?(?:\w*(?:Error|Exception)|KeyboardInterrupt):/;
+  for (const kind of ["log", "warn", "error"]) {
+    const original = console[kind].bind(console);
+    console[kind] = (...args) => {
+      original(...args);
+      // A whole traceback usually arrives as one multi-line string, so look at
+      // the lines rather than at the argument.
+      const text = args.map((a) => String(a)).join(" ");
+      for (const line of text.split("\n")) {
+        recent.push(line);
+        if (recent.length > 120) recent.shift();
+      }
+      const failing = text.split("\n").reverse().find((l) => FAILED.test(l));
+      if (!failing) return;
+      const start = recent.findIndex((l) => l.includes("Traceback (most recent call last)"));
+      tell({
+        type: "player-error",
+        message: failing.trim(),
+        detail: (start >= 0 ? recent.slice(start) : recent.slice(-30)).join("\n"),
+      });
+    };
+  }
+
   const WORK = "/pyxel_working_directory";
 
   // pyxel.js runs _executePyxelCommand against the very object handed to
@@ -28,6 +55,7 @@
   let appId = null;
   let appRev = 0;
   let audioMode = "pyxel";
+  let packageUrls = [];
   let hasData = false;
 
   const pyodide = () => window.pyxelContext?.pyodide;
@@ -534,6 +562,18 @@
     const t0 = performance.now();
     const fs = pyo.FS;
 
+    // Anything the game imports that the runtime does not carry. loadPackage,
+    // not a hand-rolled unpack: a wheel with a wasm library in it only works if
+    // the dynamic loader is told about it, and that is what this does.
+    if (packageUrls.length) {
+      try {
+        await pyo.loadPackage(packageUrls);
+        console.log(`Python パッケージ ${packageUrls.length} 件を読み込みました`);
+      } catch (err) {
+        console.log("パッケージを読み込めません: " + err);
+      }
+    }
+
     // Data comes in as [path, size] pairs and is attached, not copied.
     const dataFiles = hasData ? await listing(`/appdata/${appId}/.pwf-index.json`) : [];
     for (const [rel, size] of dataFiles) {
@@ -943,6 +983,7 @@ pyxel._pwf_media_on = True
     appId = msg.appId || null;
     appRev = msg.rev || 0;
     audioMode = msg.audio || "pyxel";
+    packageUrls = Array.isArray(msg.packages) ? msg.packages : [];
     hasData = !!msg.hasData;
     padMode = msg.pad || "auto";
     launchParams.command = "play";
@@ -957,6 +998,36 @@ pyxel._pwf_media_on = True
 
     if (msg.type === "audio") {
       setPlaying(msg.on);
+      return;
+    }
+
+    if (msg.type === "probe") {
+      // Which of these the interpreter genuinely cannot find. Reading the
+      // stdlib archive is not enough: math, time and the rest are built into
+      // the interpreter and appear in no file, and offering to download them
+      // would fetch some unrelated package of the same name.
+      let missing = msg.names || [];
+      try {
+        const found = pyodide().runPython(`
+import importlib.util, json
+
+def _pwf_missing(names):
+    out = []
+    for name in names:
+        try:
+            if importlib.util.find_spec(name) is None:
+                out.append(name)
+        except Exception:
+            out.append(name)
+    return json.dumps(out)
+
+_pwf_missing(${JSON.stringify(msg.names || [])})
+`);
+        missing = JSON.parse(found);
+      } catch (err) {
+        console.log("import の確認に失敗: " + err);
+      }
+      tell({ type: "probed", id: msg.id, missing });
       return;
     }
 

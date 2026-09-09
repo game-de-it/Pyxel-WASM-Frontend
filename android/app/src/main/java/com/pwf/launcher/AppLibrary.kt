@@ -83,6 +83,17 @@ class AppLibrary(private val ctx: Context) {
         setField(id, "audio", mode)
     }
 
+    /**
+     * Python packages to load before this app runs, comma separated.
+     *
+     * Per app rather than global: loading every package every time would slow
+     * every launch for the sake of one game.
+     */
+    fun setPackages(id: String, names: String) {
+        require(names.matches(Regex("[A-Za-z0-9_.,+-]*"))) { "不正な指定: $names" }
+        setField(id, "packages", names)
+    }
+
     /** What a tap on the card does: "restart" or "continue". */
     fun setResume(id: String, mode: String) {
         require(mode in setOf("restart", "continue")) { "不正な指定: $mode" }

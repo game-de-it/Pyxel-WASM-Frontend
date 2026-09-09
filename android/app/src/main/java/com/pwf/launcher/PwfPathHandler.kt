@@ -15,6 +15,7 @@ import java.io.InputStream
  *  - `/runtime/<n>/…`     the active runtime bundle (downloaded or baseline)
  *  - `/apps/<id>.pyxapp`  a Pyxel app the native side already fetched
  *  - `/appshot/<id>.png`  a frame from the last time that app ran
+ *  - `/pypkg/<wheel>`     a Python package a game imports
  *  - `/appdata/<id>/…`    the data folder that shipped alongside such an app
  *  - `/appsave/<id>/…`    what that app wrote the last time it ran
  *
@@ -26,6 +27,7 @@ class PwfPathHandler(
     private val ctx: Context,
     private val runtime: RuntimeStore,
     private val library: AppLibrary,
+    private val packages: PyPackages,
 ) : WebViewAssetLoader.PathHandler {
 
     companion object {
@@ -69,6 +71,7 @@ class PwfPathHandler(
                 clean.startsWith("runtime/") -> runtimeFile(clean.removePrefix("runtime/"))
                 clean.startsWith("apps/") -> appFile(clean.removePrefix("apps/"))
                 clean.startsWith("appshot/") -> shotFile(clean.removePrefix("appshot/"))
+                clean.startsWith("pypkg/") -> wheelFile(clean.removePrefix("pypkg/"))
                 clean.startsWith("appdata/") ->
                     scopedFile(clean.removePrefix("appdata/")) { library.dataDir(it) }
                 clean.startsWith("appsave/") ->
@@ -105,6 +108,12 @@ class PwfPathHandler(
             return respond(rel, found.first, IMMUTABLE, found.second)
         }
         return respond(rel, runtime.open(rel), IMMUTABLE, runtime.length(rel))
+    }
+
+    /** A Python wheel a game needs. Named by content, so it never changes. */
+    private fun wheelFile(name: String): WebResourceResponse {
+        val found = packages.open(name) ?: return status(404, "Not Found")
+        return respond(name, found.first, IMMUTABLE, found.second)
     }
 
     /** A game's picture. It changes as the game is played, so it is not cached. */

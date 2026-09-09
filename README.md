@@ -28,6 +28,9 @@ front of it. Put `.pyxapp` files on the device, press play.
   *touch to start* screen.
 - **A Pyxel version per game**, from the whole 2.x line, downloaded on demand
   when a game only behaves on a particular one.
+- **Python packages on demand.** A game that imports pymunk or numpy says so in
+  a readable error, and one button finds the wheel, its dependencies, and
+  switches it on for that game.
 - **Runtime updates over the network**, verified, atomic, and rolled back on
   their own if they fail to start.
 

@@ -22,6 +22,8 @@ things that turned out to matter. If you only want to use pwf, read the
 - [Adding a folder at once](#adding-a-folder-at-once)
 - [Backing saves up](#backing-saves-up)
 - [Pictures in the library](#pictures-in-the-library)
+- [Python packages a game needs](#python-packages-a-game-needs)
+- [When a game stops](#when-a-game-stops)
 - [Runtimes on the device](#runtimes-on-the-device)
 - [Runtime updates](#runtime-updates)
   - [Testing an update over `adb`](#testing-an-update-over-adb)
@@ -491,6 +493,60 @@ could read it, and a callback added at page load runs *before* Emscripten's draw
 rather than after it, so it only ever sees black. Forcing `preserveDrawingBuffer`
 would fix that and cost frame rate on a device where frame rate is the whole
 problem.
+
+## Python packages a game needs
+
+The bundled Pyodide is the *core* distribution: an interpreter and the standard
+library, nothing else. A game that imports pymunk or numpy dies on the import
+and has no way to ask for what it wants. So the launcher asks for it.
+
+**Finding out what is missing takes two steps, because neither half knows
+enough on its own.** The native side reads the imports out of the `.pyxapp` as
+text — running it is exactly what fails — and strikes out the game's own
+modules, the names in `python_stdlib.zip`, and what is already installed. That
+still over-reports: `math`, `time` and the rest are compiled into the
+interpreter and appear in no file, and PyPI has an unrelated package called
+`math` that would then be offered for download. So the remaining candidates go
+to the live interpreter, which answers with `importlib.util.find_spec`.
+
+Wheels are fetched **natively** and served from `/pypkg/`, the same rule the
+runtime layers follow: a WebView holding a JavascriptInterface never loads an
+outside URL. Two sources are tried, in order:
+
+1. **The Pyodide distribution** that matches the bundled interpreter, resolved
+   through the `packages` table in `pyodide-lock.json`. Its `depends` field
+   gives real dependency resolution for free — asking for pymunk is what brings
+   in cffi, and cffi is what brings in pycparser.
+2. **PyPI**, for a wheel tagged for this ABI (`cp314-cp314-pyemscripten_2026_0_wasm32`)
+   or pure Python. The tag is built from the interpreter's own version and the
+   bundle's ABI rather than hardcoded. Dependencies come from the wheel's
+   `METADATA`, ignoring anything behind an extra.
+
+Loading is `pyodide.loadPackage()` with local URLs, done in `pwfPrepareFiles`
+before the app runs. **Not a hand-rolled unpack**: unpacking a wheel into
+site-packages works right up until the wheel contains a wasm shared library,
+and then the import fails because nothing told the dynamic loader about it.
+`loadPackage` is what does that.
+
+Which packages a game loads is per app, not global: loading everything on every
+launch would slow every game for the sake of one.
+
+What this does not do yet: wheels are chosen for the **default** runtime's ABI.
+A game pinned to an older Pyxel runs on a different Pyodide, and the wheels
+fetched for the default one will not load there.
+
+## When a game stops
+
+Pyxel paints the traceback onto the canvas in four-pixel text, which on a
+handheld cannot be read at all — the first report of a broken game in this
+project was "there is an error but I cannot see it".
+
+The player keeps a ring buffer of console output and watches for a line that
+looks like the end of a traceback. Match on **lines**, not on the argument: a
+whole traceback usually arrives as one multi-line string, so anchoring the
+pattern at the start of the argument never fires. The shell shows the failing
+line and the traceback in a sheet above the stage, with a button that runs the
+missing-module scan on the app that just died.
 
 ## Runtimes on the device
 

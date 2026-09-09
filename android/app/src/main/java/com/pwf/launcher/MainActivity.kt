@@ -29,6 +29,8 @@ class MainActivity : Activity() {
         private set
     lateinit var library: AppLibrary
         private set
+    lateinit var packages: PyPackages
+        private set
 
     private lateinit var webView: WebView
     private lateinit var assetLoader: WebViewAssetLoader
@@ -59,11 +61,12 @@ class MainActivity : Activity() {
         runtime = RuntimeStore(this)
         library = AppLibrary(this)
         library.migrateRuntimePins()
+        packages = PyPackages(this, runtime)
         // Decide the fate of an unconfirmed bundle before anything loads it.
         runtime.beforeLoad()
 
         assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/", PwfPathHandler(this, runtime, library))
+            .addPathHandler("/", PwfPathHandler(this, runtime, library, packages))
             .build()
 
         webView = WebView(this).apply {
