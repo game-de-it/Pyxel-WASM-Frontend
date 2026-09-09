@@ -231,6 +231,24 @@
   .sheet h1 { margin: 0 0 18px; font-size: 18px; }
   .row { display: grid; gap: 8px; margin-bottom: 18px; }
   .row .actions { display: flex; gap: 8px; }
+
+  /* One module per row, name left and its one action right — the same shape
+     as a library row, so a long list stays readable instead of squeezing
+     buttons together. */
+  .mods { display: grid; gap: 8px; }
+  .mod {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .mod .name { min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+  .mod .sub { font-size: 12px; color: var(--ink-faint); font-family: ui-monospace, monospace; }
+  .mod .btn { flex: 0 0 auto; padding: 8px 12px; font-size: 13px; }
   .label { font: 600 11px/1 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
 
   select.pick {
@@ -385,7 +403,9 @@
   <div class="row">
     <div class="label">Python パッケージ</div>
     <div class="log" id="game-packages-note">なし</div>
-    <div class="actions" id="game-packages"></div>
+    <div class="actions">
+      <button class="btn" id="game-packages-open" type="button">モジュールを管理</button>
+    </div>
   </div>
 
   <div class="row">
@@ -417,6 +437,40 @@
     <div class="actions">
       <button class="btn danger" id="game-remove" type="button">ライブラリから削除</button>
       <button class="btn ghost" id="game-close" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="packages-sheet">
+  <h1 id="packages-title">モジュール</h1>
+  <dl class="facts" id="packages-facts"></dl>
+
+  <div class="row">
+    <div class="label">読み込む</div>
+    <div class="log" id="packages-chosen-note">なし</div>
+    <div class="mods" id="packages-chosen"></div>
+  </div>
+
+  <div class="row">
+    <div class="label">不足しているもの</div>
+    <div class="log" id="packages-missing-note">
+      ゲームの import を読んで、この版に無いものを探します
+    </div>
+    <div class="actions">
+      <button class="btn" id="packages-scan" type="button">調べる</button>
+    </div>
+    <div class="mods" id="packages-missing"></div>
+  </div>
+
+  <div class="row">
+    <div class="label">この版で導入済み</div>
+    <div class="log" id="packages-held-note">なし</div>
+    <div class="mods" id="packages-held"></div>
+  </div>
+
+  <div class="row">
+    <div class="actions">
+      <button class="btn ghost" id="packages-close" type="button">閉じる</button>
     </div>
   </div>
 </div>
@@ -824,66 +878,153 @@
     }
   }
 
-  // What this game loads, and what it looks like it still needs.
+  const namesOf = (entry) =>
+    (entry.packages || "").split(",").map((s) => s.trim()).filter(Boolean);
+
+  // Which interpreter this game's wheels have to be built for. A game pinned
+  // to an older Pyxel gets an older Python, and a wheel for one will not load
+  // in the other, so every question about its packages goes through this.
+  const targetOf = (id) => {
+    try {
+      return JSON.parse(host.packageTarget(id) || "{}") || {};
+    } catch (err) {
+      return {};
+    }
+  };
+
+  const heldFor = (abi) =>
+    packageState.filter((pkg) => pkg.abi === abi && pkg.name);
+
+  // The game sheet only says where things stand; managing them is its own
+  // screen, because one line per module does not fit beside everything else.
   function renderGamePackages(entry) {
     const note = $("game-packages-note");
-    const row = $("game-packages");
-    if (!note || !row) return;
-    const chosen = (entry.packages || "").split(",").map((s) => s.trim()).filter(Boolean);
-    const missing = scanned.id === entry.id ? scanned.missing : [];
-
-    // Wheels are built for one interpreter, so what this game can load
-    // follows the Pyxel it is pinned to. Say which, or the list is a riddle
-    // when the same package shows up twice under settings.
+    if (!note) return;
+    const chosen = namesOf(entry);
     const on = entry.runtime ? `pyxel ${entry.runtime}` : "既定の pyxel";
     // A version change leaves the names but not the wheels: those were built
     // for the interpreter this game no longer runs on, so say so plainly
     // rather than letting the game stop at the import again.
-    let abi = "";
-    try {
-      abi = (JSON.parse(host.packageTarget(entry.id) || "{}") || {}).abi || "";
-    } catch (err) {
-      abi = "";
-    }
-    const held = new Set(
-      packageState.filter((p) => p.abi === abi).map((p) => (p.name || "").toLowerCase()),
-    );
+    const held = new Set(heldFor(targetOf(entry.id).abi).map((p) => p.name.toLowerCase()));
     const stale = chosen.filter((n) => !held.has(n.toLowerCase()));
     note.textContent = chosen.length
-      ? `読み込む: ${chosen.join(", ")}（${on} 用）` +
-        (stale.length ? ` — ${stale.join(", ")} はこの版の分がまだありません` : "")
-      : "なし — ゲームが pymunk などを import するなら、下から調べて取得してください";
+      ? `${chosen.length} 件（${on} 用）: ${chosen.join(", ")}` +
+        (stale.length ? ` — ${stale.length} 件はこの版の分がまだありません` : "")
+      : "なし — ゲームが pymunk などを import するなら、管理画面から調べてください";
+  }
 
-    row.innerHTML = "";
-    const scan = document.createElement("button");
-    scan.className = "btn";
-    scan.type = "button";
-    scan.textContent = "不足しているモジュールを調べる";
-    scan.onclick = () => host.missingPackages(entry.id);
-    row.appendChild(scan);
+  // ---- the module screen ---------------------------------------------------
 
+  let packagesId = null;
+
+  function openPackagesSheet(id, thenScan) {
+    packagesId = id;
+    renderPackagesSheet();
+    $("packages-sheet").classList.add("on");
+    if (thenScan) host.missingPackages(id);
+  }
+
+  /** One row: what it is on the left, its single action on the right. */
+  function modRow(name, sub, action, label, kind) {
+    const row = document.createElement("div");
+    row.className = "mod";
+    const text = document.createElement("div");
+    text.className = "name";
+    text.textContent = name;
+    if (sub) {
+      const small = document.createElement("div");
+      small.className = "sub";
+      small.textContent = sub;
+      text.appendChild(small);
+    }
+    const button = document.createElement("button");
+    button.className = `btn ${kind || "ghost"}`;
+    button.type = "button";
+    button.textContent = label;
+    button.onclick = () => action(button);
+    row.append(text, button);
+    return row;
+  }
+
+  /** Rows say everything when there are any; the line above is for when there
+   *  are none, and repeating a count over a list nobody has to count is noise. */
+  const fill = (id, rows, note, empty) => {
+    const box = $(id);
+    box.innerHTML = "";
+    for (const row of rows) box.appendChild(row);
+    $(note).textContent = empty;
+    $(note).hidden = rows.length > 0;
+  };
+
+  function renderPackagesSheet() {
+    const entry = packagesId && findEntry(packagesId);
+    if (!entry) {
+      $("packages-sheet").classList.remove("on");
+      packagesId = null;
+      return;
+    }
+
+    $("packages-title").textContent = entry.title || entry.name;
+
+    const target = targetOf(entry.id);
+    const facts = $("packages-facts");
+    facts.innerHTML = "";
+    for (const [key, value] of [
+      ["pyxel", entry.runtime || `既定 (${runtimeState?.pyxel || "?"})`],
+      ["python", target.python || "?"],
+      ["abi", target.abi || "?"],
+    ]) {
+      const dt = document.createElement("dt");
+      dt.textContent = key;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      facts.append(dt, dd);
+    }
+
+    const chosen = namesOf(entry);
+    const held = heldFor(target.abi);
+    const heldNames = new Set(held.map((pkg) => pkg.name.toLowerCase()));
+    const setTo = (names) => host.setPackages(entry.id, names.join(","));
+
+    // What the game loads. A name whose wheel is not here for this version
+    // stays listed -- it is still the game's choice -- but says so.
+    fill("packages-chosen", chosen.map((name) => {
+      const there = heldNames.has(name.toLowerCase());
+      return modRow(
+        name,
+        there ? "" : "この版の分がまだありません — 下で調べてください",
+        () => setTo(chosen.filter((n) => n !== name)),
+        "外す",
+      );
+    }), "packages-chosen-note", "なし");
+
+    // Read from the source, so a name the game only tries inside a try/except
+    // is in here too -- and some of those names belong to unrelated projects
+    // on PyPI. One at a time, and say so, rather than a button that takes the
+    // lot: the name in the error is the one that is actually wanted.
+    const missing = scanned.id === entry.id ? scanned.missing : [];
+    const box = $("packages-missing");
+    box.innerHTML = "";
     for (const name of missing) {
-      const get = document.createElement("button");
-      get.className = "btn primary";
-      get.type = "button";
-      get.textContent = `${name} を取得`;
-      get.onclick = () => {
-        get.disabled = true;
-        get.textContent = `${name} を取得中…`;
+      box.appendChild(modRow(name, "", (button) => {
+        button.disabled = true;
+        button.textContent = "取得中…";
         host.installPackage(entry.id, name);
-      };
-      row.appendChild(get);
+      }, "取得", "primary"));
     }
+    $("packages-missing-note").textContent = missing.length
+      ? "ソースから読んだ名前です。ゲームが「あれば使う」だけのものも混じります — エラーに出た名前を取得してください"
+      : "調べていません — 下のボタンから";
 
-    for (const name of chosen) {
-      const drop = document.createElement("button");
-      drop.className = "btn ghost";
-      drop.type = "button";
-      drop.textContent = `${name} を外す`;
-      drop.onclick = () =>
-        host.setPackages(entry.id, chosen.filter((n) => n !== name).join(","));
-      row.appendChild(drop);
-    }
+    // Already on the device for this interpreter, but not switched on here.
+    // Without this the only way to add one is to fetch it again, and it would
+    // not even be offered: the scan skips what is already installed.
+    const spare = held.filter(
+      (pkg) => !chosen.some((n) => n.toLowerCase() === pkg.name.toLowerCase()),
+    );
+    fill("packages-held", spare.map((pkg) =>
+      modRow(pkg.name, pkg.version || "", () => setTo([...chosen, pkg.name]), "追加"),
+    ), "packages-held-note", "なし");
   }
 
   function renderRuntimeList() {
@@ -950,8 +1091,9 @@
     if (!playingId) return;
     $("error-sheet").classList.remove("on");
     closePlayer();
+    // Both, so going back lands on the game rather than the library.
     openGameSheet(playingId);
-    host.missingPackages(playingId);
+    openPackagesSheet(playingId, true);
   };
 
   $("layout-toggle").onclick = () => {
@@ -962,6 +1104,13 @@
       // Not remembered, but still switched for this run.
     }
     renderLibrary();
+  };
+
+  $("game-packages-open").onclick = () => sheetId && openPackagesSheet(sheetId);
+  $("packages-scan").onclick = () => packagesId && host.missingPackages(packagesId);
+  $("packages-close").onclick = () => {
+    $("packages-sheet").classList.remove("on");
+    packagesId = null;
   };
 
   $("game-pick-update").onclick = () => sheetId && host.pickUpdate(sheetId);
@@ -1131,7 +1280,7 @@
   const NAV_REPEAT = 120;
 
   const navLayer = () => {
-    for (const id of ["error-sheet", "url-modal", "game-sheet", "settings"]) {
+    for (const id of ["error-sheet", "url-modal", "packages-sheet", "game-sheet", "settings"]) {
       if ($(id).classList.contains("on")) return $(id);
     }
     return document.body;
@@ -1267,7 +1416,12 @@
     if (layer !== padLayer) {
       padLayer = layer;
       if (document.body.classList.contains("pad")) {
-        if (layer === document.body && navReturn?.isConnected) navFocus(navReturn);
+        // Closing a sheet returns to the control that opened it -- but only
+        // if that control is still on screen; a hidden one takes focus
+        // nowhere visible.
+        const back = navReturn?.isConnected && navReturn.offsetParent !== null &&
+          layer.contains(navReturn) ? navReturn : null;
+        if (back) navFocus(back);
         else if (!layer.contains(document.activeElement)) navFocus(navTargets(layer)[0]);
       }
     }
@@ -1302,10 +1456,11 @@
   requestAnimationFrame(pollPad);
 
   window.pwfBack = () => {
-    for (const id of ["error-sheet", "url-modal", "game-sheet", "settings"]) {
+    for (const id of ["error-sheet", "url-modal", "packages-sheet", "game-sheet", "settings"]) {
       if ($(id).classList.contains("on")) {
         $(id).classList.remove("on");
         if (id === "game-sheet") sheetId = null;
+        if (id === "packages-sheet") packagesId = null;
         return true;
       }
     }
@@ -1323,6 +1478,7 @@
     if (msg.type === "probed") {
       scanned = { id: msg.id, missing: msg.missing || [] };
       renderGameSheet();
+      renderPackagesSheet();
       toast(scanned.missing.length
         ? `不足: ${scanned.missing.join(", ")}`
         : "不足しているモジュールはありません");
@@ -1470,6 +1626,7 @@
         } else {
           scanned = { id: payload.id, missing: payload.missing || [] };
           renderGameSheet();
+          renderPackagesSheet();
           toast(scanned.missing.length
             ? `不足: ${scanned.missing.join(", ")}`
             : "不足しているモジュールはありません");
@@ -1481,8 +1638,14 @@
       case "package-installed":
         readPackages();
         renderPackageList();
-        scanned = { id: null, missing: [] };
+        // What was missing is settled; a fetch of one may have brought others
+        // in as dependencies, so the old list is no longer the truth.
+        scanned = {
+          id: scanned.id,
+          missing: (scanned.missing || []).filter((n) => n !== payload.name),
+        };
         renderGameSheet();
+        renderPackagesSheet();
         toast(payload.removed
           ? `${payload.name} を削除しました`
           : `${payload.name} ${payload.version || ""} を追加しました`);
@@ -1513,6 +1676,7 @@
       case "library-changed":
         renderLibrary();
         renderGameSheet();
+        renderPackagesSheet();
         break;
       case "assets-added":
         renderLibrary();

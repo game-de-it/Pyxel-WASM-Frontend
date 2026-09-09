@@ -533,7 +533,12 @@ and then the import fails because nothing told the dynamic loader about it.
 `loadPackage` is what does that.
 
 Which packages a game loads is per app, not global: loading everything on every
-launch would slow every game for the sake of one.
+launch would slow every game for the sake of one. It is also managed on a
+screen of its own rather than in the game sheet: one module per row, because a
+row of buttons that grows with the list squeezes them all until nothing is
+legible. That screen is also the only place an already-installed package can be
+switched on for a game — the scan skips what is installed, so without it the
+only way to add one would be to fetch it a second time.
 
 **Everything above is asked of a game's own runtime, not of "the" runtime.**
 `PyPackages.Target` carries one interpreter's `cp` tag, ABI, platform and

@@ -118,12 +118,21 @@ Some games import something the runtime does not carry — a physics library, an
 image library. The game stops on that import, and there is nothing it can do
 about it from inside.
 
-⚙ → **Python パッケージ** → **不足しているモジュールを調べる** reads the game's
-source, asks the interpreter which of its imports it cannot find, and offers to
-fetch each one. Fetching also switches it on for that game.
+⚙ → **Python パッケージ** → **モジュールを管理** opens a screen of its own for
+that game, one module per row:
+
+- **読み込む** — what this game loads. 外す takes one off the list.
+- **不足しているもの** — 調べる reads the game's source, asks the interpreter
+  which of its imports it cannot find, and lists them with a 取得 button each.
+  Fetching also switches it on for the game. These names are read out of the
+  source, so a name the game only tries opportunistically is in the list too,
+  and a few of those belong to unrelated projects on PyPI: fetch the one the
+  error actually named, not the whole list.
+- **この版で導入済み** — already on the device for this interpreter but not
+  switched on here. 追加 turns it on without downloading anything again.
 
 A game that has already stopped this way is quicker still: the error panel that
-appears has the same button on it.
+appears opens the same screen and scans.
 
 Only wheels built for the interpreter can be used, and they come from the
 Pyodide distribution or from PyPI. Something with no such build cannot be
@@ -131,9 +140,9 @@ installed — there is no way around that from here.
 
 Packages follow the game's **Pyxel version**. An older Pyxel runs on an older
 Python, and a wheel built for one will not load in the other, so each version
-gets its own copy: the panel says which Pyxel a game's packages are for, and
-tells you when a package it names has no build for the version currently
-selected. Scanning again fetches the right one.
+gets its own copy: the screen says which Pyxel, Python and ABI it is working
+against, and marks any module whose build for that version is not there yet.
+Scanning again fetches the right one.
 
 Everything downloaded is listed in the runtime settings, tagged with the Python
 it was built for (`[cp314]`), where it can be removed again.
