@@ -94,7 +94,7 @@ Everything below is per game, from the ⚙ beside its card.
 | **サムネイル** | Delete the card's picture so a fresh one is taken next time you play. |
 | **Pyxel バージョン** | Which Pyxel this game runs on. See below. |
 | **音声の再生** | `Pyxel` (normal) or `ブラウザ`. See below. |
-| **仮想コントローラ** | `自動` hides the painted pad once a real one is used; `OFF` and `ON` decide it outright. |
+| **仮想コントローラ** | `自動` paints a pad only while no real one is there; `OFF` and `ON` decide it outright. A browser reveals a gamepad only after it has been used, so under `自動` the painted pad can still appear for the first moments of a session and go once the real one is seen. |
 | **タップしたとき** | `続きから` or `最初から`. |
 | **ライブラリから削除** | Removes the entry, its data folder and its saves. Press twice. |
 

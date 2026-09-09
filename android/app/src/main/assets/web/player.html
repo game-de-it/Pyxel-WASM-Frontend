@@ -95,12 +95,25 @@
   const gamepadOnScreen = () =>
     !gamepadHidden && !!document.getElementById("pyxel-gamepad-cross");
 
+  // What was last handed to the canvas, so a repeat costs nothing. The three
+  // images are appended one at a time, so this cannot be read back off any one
+  // of them: the second append would find the first already right and stop.
+  let padApplied = null;
+
   const showGamepad = (show) => {
     gamepadHidden = !show;
+    let found = 0;
     for (const id of ["pyxel-gamepad-cross", "pyxel-gamepad-button", "pyxel-gamepad-menu"]) {
       const el = document.getElementById(id);
-      if (el) el.style.display = show ? "" : "none";
+      if (!el) continue;
+      found++;
+      el.style.display = show ? "" : "none";
     }
+    // Not painted yet, or not painted at all on this device: remember the
+    // answer for when the images arrive, and leave the canvas alone -- its
+    // height is only ours to set when the controls are really there.
+    if (!found || padApplied === show) return;
+    padApplied = show;
     // pyxel.js reserves the bottom fifth for the touch controls; hand it back
     // when they are gone. This is the same knob pyxel.js itself uses.
     const canvas = document.querySelector("canvas#canvas");
@@ -113,26 +126,29 @@
   // reach for the physical pad every time just to dismiss the painted one.
   let padMode = "auto";
 
+  const padPresent = () => [...(navigator.getGamepads?.() || [])].some(Boolean);
+
+  // Decided from the situation, not only from the events that announce it.
+  // This page outlives the game -- one interpreter, games swapped in place --
+  // so a title set to OFF used to leave the pad hidden for the next one, and
+  // "auto" never looked again because gamepadconnected had already fired.
   const applyPadMode = () => {
     if (padMode === "off") showGamepad(false);
     else if (padMode === "on") showGamepad(true);
+    else showGamepad(!padPresent());
   };
 
   // pyxel.js appends the touch controls from each image's onload, so they are
   // not in the document yet when the launch command reaches our hook. Watch for
   // them instead of guessing at a delay.
-  new MutationObserver(() => {
-    if (padMode !== "auto") applyPadMode();
-  }).observe(document.documentElement, { childList: true, subtree: true });
+  new MutationObserver(applyPadMode)
+    .observe(document.documentElement, { childList: true, subtree: true });
 
-  window.addEventListener("gamepadconnected", () => {
-    if (padMode === "auto") showGamepad(false);
-  });
-  window.addEventListener("gamepaddisconnected", () => {
-    if (padMode !== "auto") return;
-    const pads = [...(navigator.getGamepads?.() || [])].filter(Boolean);
-    if (!pads.length) showGamepad(true);
-  });
+  // A pad appearing or going away mid-game is the other half: the browser only
+  // reveals one after it has been used, so this can arrive well after a game
+  // has started painting its own.
+  window.addEventListener("gamepadconnected", applyPadMode);
+  window.addEventListener("gamepaddisconnected", applyPadMode);
 
 
   // ---- host page API expected by web-built games --------------------------
@@ -986,6 +1002,7 @@ pyxel._pwf_media_on = True
     packageUrls = Array.isArray(msg.packages) ? msg.packages : [];
     hasData = !!msg.hasData;
     padMode = msg.pad || "auto";
+    applyPadMode();
     launchParams.command = "play";
     launchParams.name = msg.name;
     launchParams.base64 = msg.base64;
