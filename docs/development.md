@@ -27,6 +27,8 @@ things that turned out to matter. If you only want to use pwf, read the
 - [Runtimes on the device](#runtimes-on-the-device)
 - [Runtime updates](#runtime-updates)
   - [Testing an update over `adb`](#testing-an-update-over-adb)
+- [Releasing](#releasing)
+  - [Writing the notes](#writing-the-notes)
 - [Notes for whoever works on this next](#notes-for-whoever-works-on-this-next)
 
 ## Build
@@ -614,6 +616,47 @@ adb reverse tcp:8899 tcp:8899
 python3 -m http.server 8899 -d /path/to/publish/2
 # manifest URL on the device: http://127.0.0.1:8899/bundle.json
 ```
+
+## Releasing
+
+1. Bump `versionCode` and `versionName` in `android/app/build.gradle.kts`.
+2. `./gradlew assembleRelease`, and copy the APK to `dist/pwf-<version>.apk`.
+   Check it with `aapt2 dump badging` and install it on a device before going
+   further — the APK that ships is the one that was tried, not one built from
+   the same commit afterwards.
+3. Add the release to `CHANGELOG.md` and `CHANGELOG.ja.md`, newest first.
+4. Commit, tag `v<version>`, push both.
+5. `gh release create v<version> --title "pwf <version>" --notes-file … dist/pwf-<version>.apk`.
+
+### Writing the notes
+
+The release notes are a list of what changed. The changelog is where the
+detail lives, and the notes link to it. Both are for someone who plays the
+games and has never read this repository.
+
+- **One bullet per change, in bold, with the explanation as sub-bullets.**
+  A reader should be able to take in the list without reading the sub-bullets
+  at all, then drop into the one that concerns them.
+- **Say what it was like before.** "The controller no longer stays hidden" tells
+  someone who never hit it nothing; naming the situation lets them recognise
+  whether it happened to them.
+- **Every sentence needs its subject.** "No longer lists built-in modules when
+  scanning" — scanning what, and who is listing? The words saved are the words
+  that carried the meaning.
+- **Nothing from inside the code.** No ABI, no interpreter, no wheel, no
+  virtual origin. Say "the version of Python running the game", "module",
+  "download". If an explanation cannot survive that, write it out longer rather
+  than falling back on the internal word.
+- **Explain the whole way down.** "Modules are kept per Pyxel version" is a
+  fact with its reason cut off. A different Pyxel means a different version of
+  Python, and a module only loads into the Python it was built for — that is
+  the sentence worth having.
+- **Only what a reader of the last release can notice.** A feature that was
+  introduced and refined within one version is one addition, not an addition
+  plus a list of changes; a bug that never shipped is not a fix. Read the
+  commits since the last tag, then throw out everything that describes the
+  development rather than the release.
+- **Both languages say the same thing.** Neither is a summary of the other.
 
 ## Notes for whoever works on this next
 
