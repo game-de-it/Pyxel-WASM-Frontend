@@ -9,46 +9,43 @@ Notable changes in each release. Releases and their APKs are on the
 
 ### Added
 
-**Python packages a game needs.** The bundled Pyodide is the core distribution:
-an interpreter and the standard library, nothing else. A game that imports
-pymunk or numpy used to die on that import with no way to ask for what it
-wanted.
+**Installing the Python modules a game needs.** Some games use a module beyond
+Pyxel itself — the pymunk physics engine, for instance. pwf ships Python and
+its standard library and nothing more, so those games stopped on the line that
+asked for the module, and there was no way to give it to them.
 
 - ⚙ → **Python パッケージ** → **モジュールを管理** opens a screen for that game
   with one module per row: what it loads, what a scan says is missing, and what
   is already on the device for it.
-- The scan reads the game's imports out of the source — running it is what
-  fails — and asks the interpreter which of them it cannot find. Names the game
-  only tries opportunistically show up too, so fetch the one the error gave.
-- Wheels come from the Pyodide distribution or PyPI, fetched natively and
-  served from the app's own origin. The WebView still never loads an outside
-  URL.
-- A package already on the device can be switched on for a game without
-  downloading it again.
-- A game that stops on a missing import now shows a readable error panel with
-  the scan on it, instead of a traceback painted in four-pixel text.
+- The scan reads the game's own source to see which modules it asks for, then
+  checks which of those are actually absent. A game may ask for a module only
+  if it happens to be there and carry on without it, and those names are in the
+  list too — so fetch the one the error named rather than everything offered.
+- Modules are downloaded by pwf itself and served to the game from inside the
+  app. The page that runs your games still never loads anything from the
+  internet directly.
+- Modules are kept separately for each Pyxel version you set on a game. A
+  different Pyxel version means a different version of Python running the game,
+  and a module only loads into the version of Python it was built for. The
+  management screen names the Pyxel and Python version it is working against,
+  and says when a module has none for that version yet — scanning again fetches
+  the right one.
+- A module you have fetched stays on the device. Another game that uses the
+  same one can switch it on without downloading it again.
 
-### Changed
-
-- Packages follow the game's **Pyxel version**. An older Pyxel runs on an older
-  Python, and a wheel built for one will not load in the other, so each
-  interpreter keeps its own copy. The management screen names the Pyxel, Python
-  and ABI it is working against, and says when a module has no build for the
-  version currently selected.
-- Wheels fetched by 0.1.0 are migrated on first start into the bundled
-  runtime's ABI, which is the only one they can have been built for.
+**A readable panel when a game stops.** Until now a game that failed showed its
+error only on its own screen, in text far too small to read on a handheld. It
+is now shown at a readable size, and the missing modules can be looked up
+straight from that panel.
 
 ### Fixed
 
-- 仮想コントローラ `自動` decides from whether a real pad is there, at every
-  launch. One page runs every game, so the answer used to carry over: a game
-  set to `OFF` left the pad hidden for the next game set to `自動`. What
-  remains is the browser's own rule — a gamepad is not revealed until it has
-  been used — so under `自動` a painted pad can still appear for the first
-  moments and go when the real one is seen.
-- The scan no longer offers `math` and the other modules compiled into the
-  interpreter. They appear in no file, and PyPI has an unrelated project called
-  `math`.
+- 仮想コントローラ `自動` now behaves the way the setting says. After playing a
+  game with the on-screen controller set to `OFF`, starting another game set to
+  `自動` left the controller missing from the screen. Note that a browser does
+  not notice a real controller until it has been used, so under `自動` the
+  on-screen controller can still appear for the first moments and disappear
+  once the real one is noticed.
 
 ## 0.1.0 — 2026-08-31
 
