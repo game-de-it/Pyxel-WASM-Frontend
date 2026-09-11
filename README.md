@@ -61,6 +61,7 @@ nothing is vendored into this repository.
 | --- | --- |
 | [User guide](docs/usage.md) · [使い方](docs/usage.ja.md) | Adding games, playing them, every setting |
 | [Developer guide](docs/development.md) · [開発者向け](docs/development.ja.md) | Architecture, build, and why things are the way they are |
+| [Changelog](CHANGELOG.md) · [変更履歴](CHANGELOG.ja.md) | What changed in each release |
 
 There is also a [prototype](prototype/README.md) — the same web layer running in
 a desktop browser, which is the quickest way to try a change or compare one

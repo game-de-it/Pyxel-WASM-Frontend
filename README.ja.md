@@ -58,6 +58,7 @@ cd android && ./gradlew :app:assembleRelease
 | --- | --- |
 | [使い方](docs/usage.ja.md) · [English](docs/usage.md) | ゲームの追加、遊び方、設定のすべて |
 | [開発者向け](docs/development.ja.md) · [English](docs/development.md) | 構成、ビルド、そうなっている理由 |
+| [変更履歴](CHANGELOG.ja.md) · [English](CHANGELOG.md) | 各リリースの変更点 |
 
 同じ Web 層をデスクトップのブラウザで動かす
 [プロトタイプ](prototype/README.md)もあります。変更を試したり、Pyxel の版を
